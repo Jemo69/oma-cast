@@ -1,0 +1,44 @@
+# oma-cast Windows executable build (electron-builder).
+# `npm run dist` → dist/oma-cast-<version>-setup.exe (NSIS, per-user) and
+# dist/win-unpacked/ for a portable run. CI runs this on windows-latest
+# and uploads the setup exe as the oma-cast-setup-win32-x64 artifact.
+appId: typecraft.oma-cast
+productName: oma-cast
+copyright: "© 2026 oma-cast contributors"
+artifactName: "oma-cast-${version}-setup.${ext}"
+
+directories:
+  output: dist
+  buildResources: build
+
+# The app requires nothing at runtime outside its own sources: core JS
+# comes from ../plugin (packed explicitly), node_modules is dev-only.
+files:
+  - main.js
+  - src/**/*
+  - ui/**/*
+  - assets/**/*
+  - themes/**/*
+  - package.json
+  - "!node_modules/**/*"
+  - "!dist/**/*"
+
+# plugin/core is two levels up from electron/src; keep it inside the app.
+extraResources:
+  - from: ../plugin/core
+    to: plugin/core
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: oma-cast

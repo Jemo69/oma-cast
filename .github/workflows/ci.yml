@@ -48,12 +48,19 @@ jobs:
         with:
           node-version: 24
 
-      # @electron/get caches its dist zip per user; key on the lockfile.
+      # @electron/get caches the dev electron dist zip per user.
       - name: Cache Electron dist
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\electron\Cache
           key: electron-${{ runner.os }}-${{ hashFiles('electron/package-lock.json') }}
+
+      # electron-builder's own downloads (NSIS tooling, winCodeSign stubs).
+      - name: Cache electron-builder
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron-builder\Cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('electron/package-lock.json') }}
 
       - name: Install
         working-directory: electron
@@ -63,27 +70,31 @@ jobs:
         working-directory: electron
         run: npm test
 
-      - name: Package win32-x64
+      # NSIS installer: dist/oma-cast-<version>-setup.exe plus a portable
+      # win-unpacked tree. Everything the app needs at runtime lives in the
+      # asar or resources/plugin (extraResources: the shared core).
+      - name: Build installer (win32-x64)
         working-directory: electron
-        shell: pwsh
-        # Everything under node_modules is dev-only (electron itself); the
-        # app requires nothing outside its own sources and assets. No asar:
-        # a test build stays inspectable/patchable.
-        run: npx --yes @electron/packager@20 . oma-cast --platform=win32 --arch=x64 --out=dist --overwrite --no-asar --ignore='^/(\.jj|\.git|dist|node_modules)(/|$)'
+        run: npm run dist
 
-      - name: Smoke-check the package layout
+      - name: Smoke-check the build layout
         working-directory: electron
         shell: pwsh
         run: |
-          $dir = Get-ChildItem dist -Directory | Select-Object -First 1
-          if (-not (Test-Path (Join-Path $dir.FullName "oma-cast.exe"))) { throw "oma-cast.exe missing" }
-          foreach ($needed in @("resources\app\main.js", "resources\app\ui\index.html", "resources\app\assets\omarchy.ttf", "resources\app\themes\tokyo-night\colors.toml")) {
-            if (-not (Test-Path (Join-Path $dir.FullName $needed))) { throw "$needed missing" }
+          $setup = Get-ChildItem dist -Filter "oma-cast-*-setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "setup exe missing" }
+          foreach ($needed in @(
+            "win-unpacked\oma-cast.exe",
+            "win-unpacked\resources\app.asar",
+            "win-unpacked\resources\plugin\core\Ranker.js",
+            "win-unpacked\resources\plugin\core\Paths.js"
+          )) {
+            if (-not (Test-Path (Join-Path "dist" $needed))) { throw "$needed missing" }
           }
-          Write-Output "package layout ok: $($dir.Name)"
+          Write-Output "build ok: $($setup.Name) ($([math]::Round($setup.Length/1MB)) MB)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: oma-cast-win32-x64
-          path: electron/dist/oma-cast-win32-x64/
+          name: oma-cast-setup-win32-x64
+          path: electron/dist/oma-cast-*-setup.exe
           if-no-files-found: error

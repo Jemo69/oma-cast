@@ -30,10 +30,16 @@ assets/            omarchy.ttf (MIT) + JetBrainsMono Nerd Font (OFL)
 
 ```sh
 cd electron
-npm install        # devDependency: electron only
+npm install        # devDependencies: electron + electron-builder
 npm start          # the launcher; hotkey Alt+Space
 npm test           # node --test: the shared core tests + this port's tests
+npm run dist       # Windows: NSIS installer → dist/oma-cast-<version>-setup.exe
 ```
+
+CI builds the installer on every push (`build-windows` job) and uploads
+`oma-cast-setup-win32-x64` — the setup exe, per-user install (no admin),
+Start Menu + desktop shortcut, Omarchy-logo icon rendered from
+`assets/omarchy.ttf`.
 
 `oma-cast.ps1` speaks JSON-lines to the running app over `\\.\pipe\oma-cast`
 (the IpcHandler contract from the Linux build):

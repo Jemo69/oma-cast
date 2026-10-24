@@ -37,6 +37,7 @@ module.exports = {
   },
 
   dismiss: function() { ipcRenderer.send("dismiss") },
+  refocus: function() { ipcRenderer.send("refocus") },
   configChanged: function() { ipcRenderer.send("host-config-changed") },
   onVisibility: function(cb) { ipcRenderer.on("visibility", function(e, v) { cb(v) }) },
   onIpc: function(cb) { ipcRenderer.on("ipc", function(e, msg) { cb(msg) }) },

@@ -450,6 +450,12 @@ host.onVisibility(function(visible) {
     W.shown = true
     prepare()
     renderAll()
+    // Keystrokes only reach the document when the window really holds
+    // keyboard focus; Windows can refuse it to a fresh frameless window.
+    // Ask main to break the foreground lock if we didn't get it. [D]
+    setTimeout(function() {
+      if (W.shown && !document.hasFocus()) host.refocus()
+    }, 150)
     return
   }
   if (W.shown && !visible) {
