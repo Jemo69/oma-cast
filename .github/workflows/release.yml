@@ -13,7 +13,6 @@ on:
       tag:
         description: "Tag to release (must exist on the remote)"
         required: true
-        default: "v0.1.0"
 
 jobs:
   release:
@@ -21,9 +20,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Full history + tags: the release notes are generated from the
+      # commits since the previous tag, so they can never lag the build.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -64,7 +66,7 @@ jobs:
           $setup = (Get-ChildItem dist -Filter "oma-cast-*-setup.exe" | Select-Object -First 1).FullName
           if (-not $setup) { throw "setup exe missing" }
           $body = @'
-          oma-cast on Windows — the first release of the Electron port.
+          oma-cast on Windows — the Electron port of the Omarchy launcher.
 
           ## Highlights
           - Pixel-faithful port of the Omarchy launcher UI (same tokens, geometry, key bindings and Nerd Font glyphs)
@@ -76,9 +78,22 @@ jobs:
 
           Unsigned build — SmartScreen will warn until a signing certificate is added.
           '@
+
+          # What changed since the previous tag. Written from the commit
+          # subjects, so a feature that lands after a tag always shows up in
+          # the next release's notes instead of being silently dropped.
+          $prev = git describe --tags --abbrev=0 "$tag^"
+          if ($LASTEXITCODE -eq 0 -and $prev -and $prev -ne $tag) {
+            $commits = @(git log --no-merges --pretty=format:"- %s" "$prev..$tag")
+            if ($commits.Count -gt 0) {
+              $body += "`n`n## Changes since $prev`n" + ($commits -join "`n")
+            }
+          }
+
           $existing = gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $setup --clobber
+            gh release edit $tag --notes $body
             Write-Output "updated existing release $tag"
           } else {
             gh release create $tag $setup --title "oma-cast $tag" --notes $body
