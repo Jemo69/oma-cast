@@ -1,0 +1,86 @@
+# Publishes a GitHub release with the Windows installer attached.
+# Two entry points: pushing a tag `v*` (from a normal git client), or a
+# manual dispatch with a tag input (used from this repo's own tooling,
+# where push events are suppressed). Idempotent: an existing release for
+# the tag gets its assets refreshed instead of a duplicate.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (must exist on the remote)"
+        required: true
+        default: "v0.1.0"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Cache Electron dist
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('electron/package-lock.json') }}
+
+      - name: Cache electron-builder
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron-builder\Cache
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('electron/package-lock.json') }}
+
+      - name: Install
+        working-directory: electron
+        run: npm ci
+
+      - name: Unit tests (shared core + port)
+        working-directory: electron
+        run: npm test
+
+      - name: Build installer (win32-x64)
+        working-directory: electron
+        run: npm run dist
+
+      - name: Publish release
+        working-directory: electron
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) { $tag = $env:GITHUB_REF_NAME }
+          $setup = (Get-ChildItem dist -Filter "oma-cast-*-setup.exe" | Select-Object -First 1).FullName
+          if (-not $setup) { throw "setup exe missing" }
+          $body = @'
+          oma-cast on Windows — the first release of the Electron port.
+
+          ## Highlights
+          - Pixel-faithful port of the Omarchy launcher UI (same tokens, geometry, key bindings and Nerd Font glyphs)
+          - Root search with the exact Raycast ranker + frecency, inline Calculator with history, quicklinks (Google, DuckDuckGo, unduck), Search Files with Open/Reveal/Copy Path, Settings view, Kill Process, default-agent hand-off
+          - Alt+Space hotkey, `oma-cast` CLI over a named pipe (toggle/run/call/doctor), installer with Start Menu + desktop shortcut
+
+          ## Install
+          Per-user install, no admin needed. Config: `%APPDATA%\oma-cast\config.json`, data: `%LOCALAPPDATA%\oma-cast`, logs: `%LOCALAPPDATA%\oma-cast\logs\main.log`.
+
+          Unsigned build — SmartScreen will warn until a signing certificate is added.
+          '@
+          $existing = gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $setup --clobber
+            Write-Output "updated existing release $tag"
+          } else {
+            gh release create $tag $setup --title "oma-cast $tag" --notes $body
+            Write-Output "created release $tag"
+          }
