@@ -56,6 +56,8 @@ plugin/                  # the Omarchy shell plugin (what gets linked into ~/.co
   services/              #   QML services that do I/O (JsonStore, OmarchyMenuSource; later clipboard, …)
   core/*.js              #   pure logic, no Qt imports: shared by QML and node tests (module.exports guard)
                          #   Ranker, Frecency (ref 02 §4, port exactly), OmarchyMenu, RootSearch, Schema, Migrate, Rpc, Paths, Log
+electron/                # the Windows port (Electron): pixel-faithful DOM port of plugin/ui + node ports of the services
+                         # reuses plugin/core unchanged; see electron/README.md
 bin/oma-cast             # bash CLI
 tests/*.test.js          # node --test unit tests for plugin/core (ranker, frecency, Omarchy menu, root search, …)
 tests/smoke.sh           # live acceptance check against the running shell
@@ -154,6 +156,8 @@ Stubbed / not yet:
 Won't do (decided 2026-10-22):
 - Keystroke buffering. Keys sent within ~40 ms of the hotkey go to the window underneath; fixing it needs a parked surface, which Omarchy avoids (SPEC §12 Phase 1).
 - Calculator: Color, Weather and Flight results, crypto, pinned history entries and a history detail pane. Trig takes radians unless given `°`/`deg` [D].
+
+**Windows port (Electron, `electron/`, started 2026-10-23):** built on request (“port this to windows, UI copy-faithful”). A pixel-for-pixel DOM port of the QML UI: the theme pipeline (Omarchy's own `shell.toml.tpl` renderer + `colors.toml` resolver, Tokyo Night bundled), the token scale, every geometry formula, the `handleKey` state machine and the Nerd Font glyphs (bundled `omarchy.ttf` + JetBrainsMono Nerd Font). `plugin/core` runs unchanged on both platforms. Host substitutions and everything that needs a live Windows box are listed in `electron/README.md`. `Schema.js` gained Windows config keys (`hotkey`, `fontFamily`, `agentCommand`, `gapsOut`, `cornerRadius`) and `Paths.js` a `resolveWindows`; both are backward compatible with the QML build. Data on Windows: `%APPDATA%\oma-cast` (config), `%LOCALAPPDATA%\oma-cast` (db/cache/state).
 
 Deviations from the original spec (SPEC §2.0 and the Phase 1 note in §12):
 - A Quickshell plugin instead of Tauri + Node; there's no NDJSON supervisor until Phase 5.

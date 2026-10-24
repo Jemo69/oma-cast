@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>oma-cast</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The transparent fullscreen overlay (PanelWindow equivalent). A
+       mousedown anywhere on it — not on the card — dismisses, exactly like
+       the QML MouseArea covering the window. -->
+  <div id="window">
+    <!-- BorderSurface card: border + radius + clipped content, positioned
+         by app.js with the QML geometry (max(gapsOut, min(h/4, …))). -->
+    <div id="card">
+      <div id="header">
+        <div id="lead"><span id="lead-glyph"></span></div>
+        <span id="query"></span>
+        <div id="caret"></div>
+        <div id="pills"></div>
+        <div id="filterbutton">
+          <span id="filter-title"></span><span id="filter-caret">▾</span>
+        </div>
+        <div id="header-hair"><div id="loader"></div></div>
+      </div>
+
+      <div id="body">
+        <div id="list"></div>
+        <div id="empty">
+          <div id="empty-glyph"></div>
+          <div id="empty-title"></div>
+          <div id="empty-hint"></div>
+        </div>
+      </div>
+
+      <div id="footer">
+        <div id="footer-left">
+          <span id="toast-icon"></span>
+          <span id="toast-text"></span>
+          <span class="keyhint" id="toast-hint"></span>
+        </div>
+        <div id="footer-right">
+          <span id="primary-title"></span>
+          <span class="keyhint" id="primary-hint"></span>
+          <div id="footer-divider"></div>
+          <span id="actions-title">Actions</span>
+          <span class="keyhint" id="actions-hint"></span>
+        </div>
+      </div>
+
+      <div id="actionpanel" class="panel">
+        <div class="panel-list"></div>
+        <div class="panel-sep"></div>
+        <div class="panel-search"><span></span></div>
+      </div>
+      <div id="dropdown" class="panel">
+        <div class="panel-list"></div>
+        <div class="panel-sep"></div>
+        <div class="panel-search"><span></span></div>
+      </div>
+      <div id="toastpanel" class="panel">
+        <div class="panel-list"></div>
+        <div class="panel-sep"></div>
+        <div class="panel-search"><span></span></div>
+      </div>
+
+      <div id="infopanel">
+        <div id="info-title"></div>
+        <div id="info-sep"></div>
+        <div id="info-rows"></div>
+      </div>
+
+      <div id="alert">
+        <div id="alert-box">
+          <div id="alert-title"></div>
+          <div id="alert-message"></div>
+          <div id="alert-spacer"></div>
+          <div id="alert-buttons">
+            <div class="alert-button" id="alert-cancel"><span>Cancel</span><span class="keyhint"></span></div>
+            <div class="alert-button" id="alert-ok"><span id="alert-ok-title">OK</span><span class="keyhint"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden mirror for Qt Text contentWidth measurements (caret/pill
+       placement uses implicitWidth). -->
+  <div id="mirror"></div>
+
+  <script src="app.js"></script>
+  <script src="view.js"></script>
+  <script src="keys.js"></script>
+</body>
+</html>

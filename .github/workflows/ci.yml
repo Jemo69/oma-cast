@@ -22,8 +22,66 @@ jobs:
       - name: Unit tests
         run: node --test tests/*.test.js
 
+      # The shared core runs against the Electron port's own tests too
+      # (theme golden values, JsonStore, the backend RPC surface).
+      - name: Electron port tests
+        working-directory: electron
+        run: |
+          npm ci
+          npm test
+
       - name: Shell syntax
         run: bash -n bin/oma-cast tests/smoke.sh
 
       - name: Plugin manifest is valid JSON
         run: node -e 'JSON.parse(require("fs").readFileSync("plugin/manifest.json", "utf8"))'
+
+  build-windows:
+    # Test build of the Windows port: run the whole suite on a real Windows
+    # runner, then package a runnable win32-x64 tree as an artifact.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # @electron/get caches its dist zip per user; key on the lockfile.
+      - name: Cache Electron dist
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('electron/package-lock.json') }}
+
+      - name: Install
+        working-directory: electron
+        run: npm ci
+
+      - name: Unit tests (shared core + port)
+        working-directory: electron
+        run: npm test
+
+      - name: Package win32-x64
+        working-directory: electron
+        shell: pwsh
+        # Everything under node_modules is dev-only (electron itself); the
+        # app requires nothing outside its own sources and assets.
+        run: npx --yes @electron/packager@^17 . oma-cast --platform=win32 --arch=x64 --out=dist --overwrite --ignore='^/(\.jj|\.git|dist|node_modules)(/|$)'
+
+      - name: Smoke-check the package layout
+        working-directory: electron
+        shell: pwsh
+        run: |
+          $dir = Get-ChildItem dist -Directory | Select-Object -First 1
+          if (-not (Test-Path (Join-Path $dir.FullName "oma-cast.exe"))) { throw "oma-cast.exe missing" }
+          foreach ($needed in @("resources\app\main.js", "resources\app\ui\index.html", "resources\app\assets\omarchy.ttf", "resources\app\themes\tokyo-night\colors.toml")) {
+            if (-not (Test-Path (Join-Path $dir.FullName $needed))) { throw "$needed missing" }
+          }
+          Write-Output "package layout ok: $($dir.Name)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oma-cast-win32-x64
+          path: electron/dist/oma-cast-win32-x64/
+          if-no-files-found: error

@@ -1,0 +1,16 @@
+{
+  "name": "oma-cast",
+  "productName": "oma-cast",
+  "version": "0.1.0",
+  "description": "Raycast-style launcher for Windows — the oma-cast Electron port",
+  "main": "main.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test ../tests/*.test.js src/*.test.js src/theme/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

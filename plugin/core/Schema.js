@@ -73,13 +73,27 @@ var configDefaults = {
   remToPxRate: 16,
   workHoursPerDay: 8,
   // "auto" follows the Qt locale; "12h" or "24h" forces a clock. [D]
-  clockFormat: "auto"
+  clockFormat: "auto",
+  // Windows port additions [D]: global hotkey (Electron accelerator), the
+  // UI font stack (empty = the bundled JetBrainsMono Nerd Font), the
+  // "Ask default agent" command template ({prompt} substitution, empty =
+  // the fallback row explains how to enable it), and the two window tokens
+  // Style reads from Hyprland on Omarchy (same fallbacks, 5 / 0).
+  hotkey: "Alt+Space",
+  fontFamily: "",
+  agentCommand: "",
+  gapsOut: 5,
+  cornerRadius: 0
 }
 
 // Values a config key or general setting may take, beyond its type.
 var configChoices = {
   clockFormat: ["auto", "12h", "24h"]
 }
+
+// Number keys allowed to be zero (gapsOut/cornerRadius mirror Hyprland
+// options where 0 is meaningful). [D]
+var configZeroable = { gapsOut: true, cornerRadius: true }
 
 var generalChoices = {
   windowMode: ["expanded", "compact"],
@@ -91,7 +105,7 @@ var generalChoices = {
 function validConfigValue(key, value) {
   if (typeof value !== typeof configDefaults[key]) return false
   if (configChoices[key]) return configChoices[key].indexOf(value) >= 0
-  if (typeof value === "number") return isFinite(value) && value > 0
+  if (typeof value === "number") return isFinite(value) && (configZeroable[key] ? value >= 0 : value > 0)
   return true
 }
 
@@ -116,6 +130,7 @@ if (typeof module !== "undefined") {
     documents: documents,
     configDefaults: configDefaults,
     generalChoices: generalChoices,
+    validConfigValue: validConfigValue,
     withConfigDefaults: withConfigDefaults
   }
 }

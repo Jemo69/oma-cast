@@ -37,10 +37,44 @@ function resolve(env) {
   }
 }
 
+// Windows folder conventions for the same layout: config in Roaming,
+// everything else in Local. The returned keys are identical to resolve()'s,
+// so callers never branch on platform. [D]
+function resolveWindows(env) {
+  function clean(value) { return String(value || "").replace(/[\\\/]+$/, "") }
+  var home = clean(env("USERPROFILE") || env("HOME"))
+  if (!home) throw new Error("USERPROFILE is not set")
+  var roaming = clean(env("APPDATA")) || home + "\\AppData\\Roaming"
+  var local = clean(env("LOCALAPPDATA")) || home + "\\AppData\\Local"
+
+  var config = roaming + "\\" + APP
+  var data = local + "\\" + APP
+  var cache = local + "\\Temp\\" + APP
+  var state = local + "\\State\\" + APP
+
+  return {
+    home: home,
+    config: config,
+    configFile: config + "\\config.json",
+    scriptCommands: config + "\\script-commands",
+    data: data,
+    db: data + "\\db",
+    extensions: data + "\\extensions",
+    extensionSupport: data + "\\extension-support",
+    clipboard: data + "\\clipboard",
+    notesAttachments: data + "\\notes\\attachments",
+    cache: cache,
+    state: state,
+    logs: state + "\\logs",
+    backups: state + "\\backups",
+    runtime: data + "\\runtime"
+  }
+}
+
 function directoriesToCreate(paths) {
   return [paths.config, paths.db, paths.cache, paths.logs, paths.backups, paths.runtime]
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { APP: APP, resolve: resolve, directoriesToCreate: directoriesToCreate }
+  module.exports = { APP: APP, resolve: resolve, resolveWindows: resolveWindows, directoriesToCreate: directoriesToCreate }
 }
