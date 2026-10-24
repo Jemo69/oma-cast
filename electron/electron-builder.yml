@@ -23,6 +23,13 @@ files:
   - "!node_modules/**/*"
   - "!dist/**/*"
 
+# Chromium memory-maps font files, and mmap cannot pass through the asar
+# patch — fonts inside app.asar silently fail and every Nerd Font glyph
+# renders as tofu. Unpack the assets so the .ttf files are real on disk;
+# the file:// URLs keep working through Electron's transparent redirect.
+asarUnpack:
+  - assets/**/*
+
 # plugin/core is two levels up from electron/src; keep it inside the app.
 extraResources:
   - from: ../plugin/core

@@ -13,6 +13,8 @@ var Frecency = require("../../plugin/core/Frecency.js")
 var RootSearch = require("../../plugin/core/RootSearch.js")
 var Calculator = require("../../plugin/core/Calculator.js")
 var Agent = require("../../plugin/core/Agent.js")
+var FileSearch = require("../../plugin/core/FileSearch.js")
+var SettingsView = require("../../plugin/core/SettingsView.js")
 var jsonStore = require("./json-store")
 var calcData = require("./calculator-data")
 
@@ -23,6 +25,8 @@ function createBackend(opts) {
   var paths = opts.paths || Paths.resolveWindows(opts.env || function(k) { return process.env[k] })
   var host = opts.host || {}
   var apps = opts.apps
+  var fileIndex = opts.fileIndex || null
+  var processes = opts.processes || null
   var nowMs = opts.now || Date.now
 
   var registry = Rpc.createRegistry()
@@ -62,7 +66,8 @@ function createBackend(opts) {
     version: VERSION,
     paths: paths,
     registry: registry,
-    get loading() { return !!((apps && apps.loading) || agentChecking) },
+    get loading() { return !!((apps && apps.loading) || agentChecking
+      || (fileIndex && fileIndex.loading) || (processes && processes.loading)) },
     get ready() { return directoriesReady && settingsStore.loaded && frecencyStore.loaded && calculatorStore.loaded },
     get storeRevision() { return storeRevision },
     get candidatesRevision() { return candidatesRevision },
@@ -257,10 +262,114 @@ function createBackend(opts) {
     emit("settings.commandSettingsChanged", { commandId: id })
   }
 
+  function toRow(c) { return { candidate: c, record: null } }
+
+  // Kill Process view rows: biggest working set first (the snapshot
+  // arrives sorted), PID as the subtitle, memory as the type label. [D]
+  function processCandidate(r) {
+    return {
+      id: "process:" + r.pid,
+      type: "process",
+      kind: "process",
+      title: r.name,
+      subtitle: "PID " + r.pid,
+      typeLabel: r.ws > 0 ? (Math.round(r.ws / 1048576 * 10) / 10) + " MB" : "",
+      glyph: "\uf2db",                 // nf-fa-microchip
+      glyphFont: "",
+      pid: r.pid,
+      path: r.path,
+      rootSearch: { when: "searching" }
+    }
+  }
+  function processRow(pid) {
+    return processes ? processes.rows.filter(function(r) { return r.pid === Number(pid) })[0] : null
+  }
+  function actionsForSetting() {
+    return [{ id: "open", title: "Change", shortcut: "↵", section: "primary", icon: "\uf0ad" }]
+  }
+  function actionsForProcess(row) {
+    var list = [{ id: "open", title: "Kill Process", shortcut: "↵", section: "primary", icon: "\uf111" }]
+    if (row && row.path) list.push({ id: "reveal", title: "Reveal in Explorer", shortcut: "Ctrl ↵", section: "primary", icon: "\uf06e" })
+    list.push({ id: "copy-pid", title: "Copy PID", shortcut: "Ctrl Shift C", section: "copy", icon: "\uf0c5" })
+    return list
+  }
+
+  // ------------------------------------------------------------ settings
+  // ↵ on a settings row cycles to the next value: "general" goes through
+  // the same validated store path as the RPC, "config" rewrites
+  // config.json (the hotkey is re-registered immediately). [D]
+  function applyConfigValue(key, value) {
+    if (!Schema.validConfigValue(key, value)) throw new Error("Invalid value for " + key)
+    config[key] = value
+    try {
+      require("fs").writeFileSync(paths.configFile, JSON.stringify(config, null, 2) + "\n")
+    } catch (e) { throw new Error("cannot write " + paths.configFile + ": " + (e && e.message || e)) }
+    if (key === "hotkey" && host.configChanged) host.configChanged()
+    if (key === "fileSearchIncludeHidden" && fileIndex && fileIndex.setIncludeHidden) fileIndex.setIncludeHidden(value)
+  }
+  function applySetting(id, action) {
+    if (action !== "open") throw new Error("Unknown action " + action)
+    var def = SettingsView.find(id)
+    if (!def) throw new Error("Unknown setting " + id)
+    var current = SettingsView.valueOf(def, settingsStore.loaded ? settingsStore.doc.general : {}, config)
+    var next = SettingsView.cycle(def, current)
+    if (def.scope === "general") {
+      var patch = {}
+      patch[def.key] = next
+      var r = Rpc.callSync(registry, "settings.updateGeneralSettings", patch)
+      if (!r.ok) throw r.error
+    } else {
+      applyConfigValue(def.key, next)
+    }
+    return { toast: { style: "success", title: def.label + ": " + SettingsView.format(def, next) } }
+  }
+
+  // ---------------------------------------------------- processes (kill)
+  function processAction(id, action) {
+    var pid = Number(String(id).slice("process:".length))
+    var row = processRow(pid)
+    if (action === "copy-pid") {
+      if (host.copy) host.copy(String(pid))
+      return { toast: { style: "success", title: "PID " + pid + " copied" } }
+    }
+    if (action === "reveal") {
+      if (!row || !row.path) throw new Error("Path unavailable for PID " + pid)
+      if (host.reveal) host.reveal(row.path)
+      return { close: true }
+    }
+    if (action !== "open") throw new Error("Unknown action " + action)
+    if (!row) throw new Error("No such process " + pid)
+    // Synchronous taskkill: a couple hundred ms on an explicit user action,
+    // and the sync RPC world gets its toast immediately. [D]
+    var res = processes.kill(pid)
+    processes.remove(pid)
+    if (!res.ok) {
+      return { toast: { style: "failure", title: "Could not kill " + row.name + (res.message ? ": " + res.message : "") } }
+    }
+    processes.refresh(true)
+    return { toast: { style: "success", title: row.name + " (" + pid + ") killed" } }
+  }
+
+  // ---------------------------------------------------------------- files
+  function fileAction(id, action) {
+    var p = String(id).slice("file:".length)
+    if (action === "copy-path") {
+      if (host.copy) host.copy(p)
+      return { close: true, hud: "Copied to Clipboard" }
+    }
+    if (action === "reveal") { if (host.reveal) host.reveal(p); return { close: true } }
+    if (action === "open") { if (host.openPath) host.openPath(p); return { close: true } }
+    throw new Error("Unknown action " + action)
+  }
+
   function performAction(data) {
     var id = String(data && data.id || "")
     var action = String(data && data.action || "open")
     var query = String(data && data.query || "").trim()
+    // View rows resolve without a stored candidate.
+    if (id.indexOf("setting:") === 0) return applySetting(id, action)
+    if (id.indexOf("process:") === 0) return processAction(id, action)
+    if (id.indexOf("file:") === 0) return fileAction(id, action)
     var candidate = decorated(id)
     if (!candidate) throw new Error("Unknown command " + id)
 
@@ -280,7 +389,11 @@ function createBackend(opts) {
             return { close: true }
           }
           recordVisit(id, query)
-          if (candidate.run.push) return { push: candidate.run.push }
+          if (candidate.run.push) {
+            // The Kill Process view wants a fresh snapshot on entry.
+            if (candidate.run.push.kind === "processes" && processes) processes.refresh()
+            return { push: candidate.run.push }
+          }
           return { close: true }
         case "fallback":
           if (host.openExternal) host.openExternal(RootSearch.fallbackUrl(candidate, query))
@@ -406,11 +519,39 @@ function createBackend(opts) {
         var view = data && data.view
         var ctx = searchContext()
         var sections
-        if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
+        if (view && view.kind === "settings") {
+          sections = [{ id: "settings", title: "", rows: SettingsView.rowsFor(
+            settingsStore.loaded ? settingsStore.doc.general : {}, config, query).map(toRow) }]
+        } else if (view && view.kind === "processes") {
+          if (processes && !processes.loading) processes.refresh()
+          var needle = query.trim().toLowerCase()
+          var prows = (processes ? processes.rows : []).filter(function(r) {
+            return !needle || r.name.toLowerCase().indexOf(needle) >= 0 || String(r.pid).indexOf(needle) === 0
+          }).map(processCandidate)
+          sections = prows.length ? [{ id: "processes", title: "", rows: prows.map(toRow) }] : []
+        } else if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
         else {
           ctx.filter = String(data && data.filter || "all")
           if (query.trim() && ctx.filter === "all") ctx.calculation = calculate(query)
           sections = RootSearch.rootSections(candidates, query, ctx, deps)
+          // SPEC §8.6: a Files section after Results (before the “Use ‘q’
+          // with…” fallbacks), once the query is long enough to plausibly
+          // be a file name.
+          var fq = query.trim()
+          if (ctx.filter === "all" && fq.length >= 2 && fileIndex && fileIndex.ready) {
+            var matches = FileSearch.match(fileIndex.entries, fq, { limit: 30 })
+            if (matches.length > 0) {
+              var fileSection = { id: "files", title: "Files", rows: matches.map(function(m) { return toRow(FileSearch.candidate(m.entry)) }) }
+              var at = -1, fb = -1
+              for (var si = 0; si < sections.length; si++) {
+                if (sections[si].id === "results") at = si
+                if (sections[si].id === "fallback-commands") fb = si
+              }
+              if (at >= 0) sections.splice(at + 1, 0, fileSection)
+              else if (fb >= 0) sections.splice(fb, 0, fileSection)
+              else sections.push(fileSection)
+            }
+          }
         }
         return sections.map(function(s) {
           return { id: s.id, title: s.title, rows: s.rows.map(function(r) { return r.candidate }) }
@@ -418,6 +559,9 @@ function createBackend(opts) {
       },
       getActions: function(data) {
         var rowId = String(data && data.id || "")
+        if (rowId.indexOf("setting:") === 0) return actionsForSetting()
+        if (rowId.indexOf("process:") === 0) return actionsForProcess(processRow(String(rowId).slice("process:".length)))
+        if (rowId.indexOf("file:") === 0) return FileSearch.actionsForFile()
         if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
         var candidate = decorated(rowId)
@@ -430,6 +574,37 @@ function createBackend(opts) {
       },
       getItemInfo: function(data) {
         var rowId = String(data && data.id || "")
+        if (rowId.indexOf("setting:") === 0) {
+          var sdef = SettingsView.find(rowId)
+          if (!sdef) throw new Error("Unknown setting " + rowId)
+          var sval = SettingsView.valueOf(sdef, settingsStore.loaded ? settingsStore.doc.general : {}, config)
+          return [
+            { label: "Setting", value: sdef.label },
+            { label: "Value", value: SettingsView.format(sdef, sval) },
+            { label: "Scope", value: sdef.scope === "general" ? "settings.json" : "config.json" },
+            { label: "Hint", value: sdef.hint }
+          ]
+        }
+        if (rowId.indexOf("process:") === 0) {
+          var prow = processRow(String(rowId).slice("process:".length))
+          if (!prow) return []
+          return [
+            { label: "Name", value: prow.name },
+            { label: "PID", value: String(prow.pid) },
+            { label: "Memory", value: prow.ws > 0 ? (Math.round(prow.ws / 1048576 * 10) / 10) + " MB" : "" },
+            { label: "Path", value: prow.path || "" }
+          ]
+        }
+        if (rowId.indexOf("file:") === 0) {
+          var fpath = String(rowId).slice("file:".length)
+          var hit = fileIndex ? fileIndex.entries.filter(function(e) { return e.p === fpath })[0] : null
+          var infoRows = [
+            { label: "Path", value: fpath },
+            { label: "Kind", value: hit ? (hit.d ? "Folder" : "File") : "File" }
+          ]
+          if (hit && hit.m) infoRows.push({ label: "Modified", value: new Date(hit.m).toLocaleString() })
+          return infoRows
+        }
         var now2 = nowMs()
         if (rowId === RootSearch.CALCULATOR_ID) {
           var calc = calculate(String(data.query || ""))
@@ -452,6 +627,15 @@ function createBackend(opts) {
         if (!(data && data.confirmed)) {
           var confirm = RootSearch.confirmationFor(String(data && data.id || ""), String(data && data.action || "open"))
           if (confirm) return { confirm: confirm }
+          // Kill Process rows confirm first (destructive, Alert.qml).
+          if (String(data && data.id || "").indexOf("process:") === 0) {
+            var kpid = Number(String(data.id).slice("process:".length))
+            var krow = processRow(kpid)
+            if (!krow) throw new Error("No such process " + kpid)
+            return { confirm: { title: "Kill " + krow.name + "?",
+              message: "PID " + kpid + " ends immediately. Unsaved data in " + krow.name + " is lost.",
+              primary: "Kill Process", destructive: true } }
+          }
         }
         var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === (data && data.id) })[0]
         if (fallback) {
@@ -555,6 +739,13 @@ function createBackend(opts) {
     frecencyStore.start()
     calculatorStore.start()
     calculatorData.start()
+    // The file index loads its cache synchronously and re-walks when stale;
+    // either way the window rebuilds when it lands.
+    if (fileIndex) {
+      fileIndex.on("changed", function() { candidatesRevision++ })
+      fileIndex.start()
+    }
+    if (processes) processes.on("changed", function() { candidatesRevision++ })
 
     if (apps) {
       apps.on("changed", scheduleRebuild)
@@ -567,8 +758,11 @@ function createBackend(opts) {
   // Window visibility hook from the QML backend's notification handler:
   // refresh zones/rates when shown, cancel a pending agent check on hide.
   api.visibility = function(visible) {
-    if (visible) { calculatorData.refresh(); if (apps) apps.refresh() }
-    else if (agentChecking) { agentChecking = false; if (agentTimer) { clearTimeout(agentTimer); agentTimer = null } }
+    if (visible) {
+      calculatorData.refresh()
+      if (apps) apps.refresh()
+      if (fileIndex) fileIndex.refreshIfStale()
+    } else if (agentChecking) { agentChecking = false; if (agentTimer) { clearTimeout(agentTimer); agentTimer = null } }
   }
 
   api.dispose = function() {

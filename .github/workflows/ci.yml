@@ -87,7 +87,9 @@ jobs:
             "win-unpacked\oma-cast.exe",
             "win-unpacked\resources\app.asar",
             "win-unpacked\resources\plugin\core\Ranker.js",
-            "win-unpacked\resources\plugin\core\Paths.js"
+            "win-unpacked\resources\plugin\core\Paths.js",
+            "win-unpacked\resources\app.asar.unpacked\assets\omarchy.ttf",
+            "win-unpacked\resources\app.asar.unpacked\assets\JetBrainsMonoNerdFont-Regular.ttf"
           )) {
             if (-not (Test-Path (Join-Path "dist" $needed))) { throw "$needed missing" }
           }

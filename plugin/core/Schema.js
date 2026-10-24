@@ -83,7 +83,11 @@ var configDefaults = {
   fontFamily: "",
   agentCommand: "",
   gapsOut: 5,
-  cornerRadius: 0
+  cornerRadius: 0,
+  // File search scopes (SPEC §8.6): empty → the user's home directory.
+  // [D] includeHidden defaults off, matching Raycast's default.
+  fileSearchScopes: [],
+  fileSearchIncludeHidden: false
 }
 
 // Values a config key or general setting may take, beyond its type.

@@ -4,6 +4,9 @@ var SUGGESTIONS_LIMIT = 6
 var FALLBACKS = [
   { id: "fallback:google", title: "Search Google", icon: "", url: "https://www.google.com/search?q={query}" },
   { id: "fallback:duckduckgo", title: "Search DuckDuckGo", icon: "", url: "https://duckduckgo.com/?q={query}" },
+  // unduck.link: the DDG frontend with the tracking stripped (added at the
+  // user's request; same {query} contract as the others). [D]
+  { id: "fallback:unduck", title: "Search unduck", icon: "", url: "https://unduck.link?q={query}" },
   { id: "fallback:agent", title: "Ask default agent", icon: "󰚩", subtitle: "New terminal session · Ctrl+Alt+Enter" }
 ]
 
@@ -24,6 +27,7 @@ function webSearch(fallback, keywords) {
 var BUILTINS = [
   webSearch(FALLBACKS[0], []),
   webSearch(FALLBACKS[1], ["ddg"]),
+  webSearch(FALLBACKS[2], ["unduck"]),
   {
     id: "builtin:omarchy-menu",
     title: "Omarchy Menu",
@@ -39,6 +43,24 @@ var BUILTINS = [
     glyph: "\uf1da",                     // nf-fa-history
     keywords: ["calculator", "calc", "math", "history", "conversions"],
     run: { push: { kind: "calculator-history", title: "Calculator History" } },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:settings",
+    title: "Settings",
+    subtitle: "Window, hotkey, search and calculator preferences",
+    glyph: "",                     // nf-fa-cog
+    keywords: ["settings", "preferences", "config", "options", "hotkey", "setup"],
+    run: { push: { kind: "settings", title: "Settings" } },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:kill-process",
+    title: "Kill Process",
+    subtitle: "End a running program",
+    glyph: "",                     // nf-fa-power-off
+    keywords: ["kill", "process", "end", "terminate", "task manager", "taskkill"],
+    run: { push: { kind: "processes", title: "Kill Process" } },
     rootSearch: { when: "always" }
   }
 ]

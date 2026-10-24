@@ -11,6 +11,16 @@ module.exports = {
   copy: function(text) { clipboard.writeText(String(text === undefined || text === null ? "" : text)) },
   readText: function() { return clipboard.readText() },
   openExternal: function(url) { shell.openExternal(String(url)) },
+  // shell.openPath opens files and folders with the registered handler;
+  // the promise resolves to "" on success or an error string. Fire-and-
+  // forget from the backend's sync API.
+  openPath: function(p) { shell.openPath(String(p)) },
+  // Reveal in Explorer: selects the file in its parent folder. [D]
+  reveal: function(p) {
+    try {
+      childProcess.spawn("explorer.exe", ["/select,", String(p)], { windowsHide: true, stdio: "ignore" }).unref()
+    } catch (e) {}
+  },
 
   // omarchy-clipboard-paste-text equivalent: set the clipboard, ask main
   // to hide the window and send Ctrl+V to the window underneath.

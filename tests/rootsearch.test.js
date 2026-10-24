@@ -51,7 +51,7 @@ test("a query always ends with the fallback section", () => {
   assert.equal(sections.length, 1)
   assert.equal(sections[0].id, "fallback-commands")
   assert.equal(sections[0].title, "Use “zzzz-nothing” with…")
-  assert.deepEqual(titles(sections[0]), ["Search Google", "Search DuckDuckGo", "Ask default agent"])
+  assert.deepEqual(titles(sections[0]), ["Search Google", "Search DuckDuckGo", "Search unduck", "Ask default agent"])
 })
 
 test("agent hand-off is explicit, stays after apps/web search, and only appears at root with a query", () => {

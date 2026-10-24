@@ -41,6 +41,14 @@ CI builds the installer on every push (`build-windows` job) and uploads
 Start Menu + desktop shortcut, Omarchy-logo icon rendered from
 `assets/omarchy.ttf`.
 
+> **Why `asarUnpack: assets/**`:** Chromium memory-maps font files and
+> mmap cannot pass through Electron's asar patch, so fonts packed inside
+> `app.asar` fail silently — every Nerd Font glyph renders as tofu. The
+> fonts live in `app.asar.unpacked/assets/` (real files on disk); the
+> `file://…app.asar/assets/…` URLs in `style.css` keep working through
+> Electron's transparent unpacked redirect. The CI layout check asserts
+> both locations.
+
 `oma-cast.ps1` speaks JSON-lines to the running app over `\\.\pipe\oma-cast`
 (the IpcHandler contract from the Linux build):
 
@@ -56,7 +64,7 @@ bin\oma-cast.ps1 install     # PATH shim in %LOCALAPPDATA%\oma-cast\bin + Startu
 
 Everything under `plugin/core/` runs unchanged: `Ranker` (the exact
 ref-02 §4 ranking), `Frecency`, `Calculator`, `RootSearch`, `Schema`,
-`Migrate`, `Rpc`, `Log`. The golden tests in `../tests/` cover the same
+`Migrate`, `Rpc`, `Log`, plus the newer `FileSearch`, `SettingsView`. The golden tests in `../tests/` cover the same
 files for both platforms; the Electron port adds tests for its own ports
 (theme resolution golden against the real Omarchy template, the store, the
 backend surface).
@@ -77,6 +85,19 @@ mix (awk rounding included) and gradient functions as
 `omarchy-theme-set-templates`. Tokyo Night is Omarchy's default theme; to
 port another one, replace `themes/tokyo-night/`. A live theme-switcher
 mirroring `omarchy theme set` is not wired up (Phase 2 territory). [D]
+
+## Built-in commands beyond the Linux build
+
+| command | what it does |
+|---|---|
+| **File search** | a Files section in root search (SPEC §8.6 slice): name match first, then path, recency within a tier; Open / Reveal in Explorer / Copy Path. Chunked walk of home (or `fileSearchScopes`), 100k cap, 10-min re-walk, disk cache — no inotify watcher yet [D] |
+| **Settings** | the Phase-2 stub made real: a pushed view over every window/hotkey/search/calculator setting; ↵ cycles values, `hotkey` re-registers immediately |
+| **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID |
+| **Search unduck** | `https://unduck.link?q=%s` as both a root fallback row and a quicklink with an argument pill |
+
+There is **no extension runtime** yet (SPEC Phase 5/§9): new capabilities
+land as built-ins in `plugin/core/RootSearch.js` + a service, which is how
+all four above were added.
 
 ## Windows substitutions [D]
 
@@ -103,6 +124,8 @@ Everything the Linux build accepts (`logLevel`, `keepVisibleOnFocusLoss`,
 | `agentCommand` | `""` | e.g. `"wt.exe claude {prompt}"`; empty disables the hand-off |
 | `gapsOut` | `5` | card-to-screen-edge gap (Style's fallback) |
 | `cornerRadius` | `0` | window rounding (Hyprland fallback) |
+| `fileSearchScopes` | `[]` (home dir) | directories the file index walks |
+| `fileSearchIncludeHidden` | `false` | index dotfiles/hidden files |
 
 Data lives in `%LOCALAPPDATA%\oma-cast` (`db\settings.json`,
 `db\frecency.json`, `db\calculator.json`, cache, logs); config in

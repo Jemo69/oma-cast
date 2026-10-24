@@ -195,6 +195,8 @@ function placeholderText() {
   if (v.kind === "alias") return "Type an alias, then press ↵"
   if (v.kind === "menu") return "Search " + v.title + "…"
   if (v.kind === "calculator-history") return "Search calculations…"
+  if (v.kind === "settings") return "Search settings…"
+  if (v.kind === "processes") return "Search processes…"
   return "Search for apps and commands…"
 }
 

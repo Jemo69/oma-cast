@@ -212,7 +212,7 @@ function renderList() {
     el.emptyGlyph.style.fontSize = px(28) + "px"
     el.emptyTitle.textContent = isAlias ? v.title
       : (v.kind === "calculator-history" && !W.query ? "No Calculations Yet"
-        : (backend.ready ? "No results" : "Loading…"))
+        : (backend.ready && !backend.loading ? "No results" : "Loading…"))
     el.emptyHint.textContent = isAlias
       ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
       : (v.kind === "calculator-history" && !W.query ? "Type a calculation in the root search, then copy or paste the answer." : "")
