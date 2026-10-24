@@ -380,6 +380,21 @@ function createBackend(opts) {
           if (apps) apps.launch(candidate.appId)
           return { close: true }
         case "builtin":
+          if (candidate.run.power) {
+            // Sleep closes the window first (host delays past the unmap);
+            // shutdown/restart stay open with a cancellable toast so the
+            // 15-second schedule can be aborted from Ctrl+T. No frecency
+            // for power actions — they must not crowd Suggestions. [D]
+            if (candidate.run.power === "sleep") {
+              if (host.power) host.power("sleep", 0)
+              return { close: true, hud: "Sleeping…" }
+            }
+            if (host.power) host.power(candidate.run.power, candidate.run.delay || 15)
+            var powerLabel = candidate.run.power === "restart" ? "Restart" : "Shut Down"
+            return { toast: { style: "success", title: powerLabel + " in " + (candidate.run.delay || 15) + " seconds",
+              actions: [{ id: "cancel-power", title: "Cancel " + powerLabel, done: powerLabel + " cancelled",
+                call: { method: "system.cancelPowerShutdown", data: null } } ] } }
+          }
           if (candidate.run.url) {
             var values = (data && data.arguments) || {}
             var missing = RootSearch.missingArgument(candidate.arguments, values)
@@ -468,7 +483,9 @@ function createBackend(opts) {
           methods: Rpc.methods(registry)
         }
       },
-      getPaths: function() { return paths }
+      getPaths: function() { return paths },
+      // The toast's Undo for scheduled shutdown/restart (shutdown /a).
+      cancelPowerShutdown: function() { if (host.cancelPower) host.cancelPower(); return null }
     })
 
     Rpc.register(registry, "settings", {

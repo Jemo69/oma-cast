@@ -46,6 +46,31 @@ module.exports = {
     } catch (e) {}
   },
 
+  // Windows power actions. shutdown/restart schedule 15 s out so the
+  // toast's Cancel (shutdown /a) can abort; sleep is delayed until the
+  // window has unmap. Note: with hibernation enabled, SetSuspendState
+  // hibernates instead of sleeping. [D]
+  power: function(kind, delay) {
+    var d = Math.max(0, Number(delay) || 0)
+    function run(bin, args) {
+      try {
+        childProcess.spawn(bin, args, { windowsHide: true, stdio: "ignore", detached: false }).unref()
+      } catch (e) {}
+    }
+    if (kind === "shutdown") run("shutdown.exe", ["/s", "/t", String(d), "/c", "oma-cast"])
+    else if (kind === "restart") run("shutdown.exe", ["/r", "/t", String(d), "/c", "oma-cast"])
+    else if (kind === "sleep") {
+      setTimeout(function() {
+        run("rundll32.exe", ["powrprof.dll,SetSuspendState", "0,1,0"])
+      }, 400)
+    }
+  },
+  cancelPower: function() {
+    try {
+      childProcess.spawn("shutdown.exe", ["/a"], { windowsHide: true, stdio: "ignore" }).unref()
+    } catch (e) {}
+  },
+
   dismiss: function() { ipcRenderer.send("dismiss") },
   refocus: function() { ipcRenderer.send("refocus") },
   configChanged: function() { ipcRenderer.send("host-config-changed") },

@@ -62,6 +62,37 @@ var BUILTINS = [
     keywords: ["kill", "process", "end", "terminate", "task manager", "taskkill"],
     run: { push: { kind: "processes", title: "Kill Process" } },
     rootSearch: { when: "always" }
+  },
+  // Windows power actions (the Omarchy system actions' equivalent).
+  // shutdown/restart schedule with a cancellable window (the toast's
+  // Cancel runs system.cancelPowerShutdown); sleep fires once the
+  // window has unmap. [D]
+  {
+    id: "builtin:shutdown",
+    title: "Shut Down",
+    subtitle: "Turn off this PC",
+    glyph: "",                     // nf-fa-power-off
+    keywords: ["shutdown", "power off", "turn off", "switch off"],
+    run: { power: "shutdown", delay: 15 },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:restart",
+    title: "Restart",
+    subtitle: "Reboot this PC",
+    glyph: "",                     // nf-fa-refresh
+    keywords: ["restart", "reboot", "reboot pc"],
+    run: { power: "restart", delay: 15 },
+    rootSearch: { when: "always" }
+  },
+  {
+    id: "builtin:sleep",
+    title: "Sleep",
+    subtitle: "Suspend this PC",
+    glyph: "",                     // nf-fa-moon
+    keywords: ["sleep", "suspend", "standby", "nap"],
+    run: { power: "sleep" },
+    rootSearch: { when: "always" }
   }
 ]
 
@@ -399,7 +430,10 @@ function missingArgument(defs, values) {
 var CONFIRMATIONS = {
   "omarchy:system.shutdown": { title: "Shut Down", message: "Are you sure you want to shut down?", primary: "Shut Down" },
   "omarchy:system.reboot": { title: "Restart", message: "Are you sure you want to restart?", primary: "Restart" },
-  "omarchy:system.logout": { title: "Log Out", message: "Are you sure you want to log out?", primary: "Log Out" }
+  "omarchy:system.logout": { title: "Log Out", message: "Are you sure you want to log out?", primary: "Log Out" },
+  // Windows equivalents; sleep needs no confirmation. [D]
+  "builtin:shutdown": { title: "Shut Down", message: "Are you sure you want to shut down?", primary: "Shut Down" },
+  "builtin:restart": { title: "Restart", message: "Are you sure you want to restart?", primary: "Restart" }
 }
 
 function confirmationFor(id, action) {

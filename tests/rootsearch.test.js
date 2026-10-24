@@ -104,7 +104,12 @@ test("empty root: favorites, suggestions, commands, applications", () => {
 
 test("hidden menu rows (when: false) and disabled commands are left out", () => {
   const sections = RS.rootSections(candidates({ when: { "system.shutdown": false }, checked: {}, disabled: {} }), "shutdown", ctx(), deps)
-  assert.equal(sections[0].id, "fallback-commands")
+  const rowIds = sections.flatMap(s => s.rows).map(r => r.candidate.id)
+  // The hidden Omarchy menu row stays out; the built-in Shut Down command
+  // (added for Windows) legitimately matches the same query.
+  assert.ok(!rowIds.includes("omarchy:system.shutdown"))
+  assert.ok(rowIds.includes("builtin:shutdown"))
+  assert.ok(rowIds.includes("fallback:google"))
   const off = results("signal", ctx({ commands: { "app:signal-desktop": { enabled: false } } }))
   assert.ok(!off.some((s) => s.id === "results" && titles(s).includes("Signal")))
 })

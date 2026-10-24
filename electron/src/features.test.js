@@ -34,6 +34,24 @@ test("Settings and Kill Process exist as always-on root commands", () => {
   assert.equal(kill.glyph.codePointAt(0), 0xf111)           // nf-fa-power-off
 })
 
+test("power commands: shutdown/restart confirm, sleep does not", () => {
+  const sd = RS.confirmationFor("builtin:shutdown", "open")
+  assert.equal(sd.destructive, true)
+  assert.equal(sd.primary, "Shut Down")
+  const rs = RS.confirmationFor("builtin:restart", "open")
+  assert.equal(rs.destructive, true)
+  assert.equal(rs.primary, "Restart")
+  assert.equal(RS.confirmationFor("builtin:sleep", "open"), null)
+  assert.equal(RS.confirmationFor("builtin:shutdown", "copy-path"), null)
+
+  const builtins = Object.fromEntries(RS.BUILTINS.filter(b => b.run && b.run.power).map(b => [b.id, b.run]))
+  assert.deepEqual(builtins["builtin:shutdown"], { power: "shutdown", delay: 15 })
+  assert.deepEqual(builtins["builtin:restart"], { power: "restart", delay: 15 })
+  assert.deepEqual(builtins["builtin:sleep"], { power: "sleep" })
+  assert.equal(RS.BUILTINS.find(b => b.id === "builtin:sleep").glyph.codePointAt(0), 0xf186)
+  assert.equal(RS.BUILTINS.find(b => b.id === "builtin:restart").glyph.codePointAt(0), 0xf021)
+})
+
 // ------------------------------------------------------------- file match
 function ent(p, d, m) { return { p, n: path.basename(p), d, m } }
 
@@ -157,7 +175,7 @@ function setup() {
     extensions: "", extensionSupport: "", clipboard: "", notesAttachments: "",
     cache: path.join(root, "cache"), state: path.join(root, "state"), logs: "", backups: "", runtime: ""
   }
-  const calls = { copy: [], openPath: [], reveal: [], configChanged: 0 }
+  const calls = { copy: [], openPath: [], reveal: [], configChanged: 0, power: [], cancelPower: 0 }
   const host = {
     copy: t => calls.copy.push(t),
     openPath: p => calls.openPath.push(p),
@@ -165,7 +183,9 @@ function setup() {
     openExternal: () => {},
     pasteText: () => {},
     checkCommand: (e, cb) => cb(true),
-    configChanged: () => { calls.configChanged++ }
+    configChanged: () => { calls.configChanged++ },
+    power: (kind, delay) => calls.power.push([kind, delay]),
+    cancelPower: () => { calls.cancelPower++ }
   }
   const fileIndex = {
     entries: [
@@ -282,5 +302,40 @@ test("backend: Kill Process confirms, kills, removes and toasts", () => {
   assert.deepEqual(filtered.data[0].rows.map(x => x.pid), [555])
   const byPid = backend.callSync("rootSearch.search", { query: "9999", view: { kind: "processes" }, filter: "all" })
   assert.deepEqual(byPid.data[0].rows.map(x => x.pid), [9999])
+  backend.dispose()
+})
+
+test("backend: shutdown schedules with a cancellable toast, sleep closes", () => {
+  const { backend, calls } = setup()
+
+  // Unconfirmed → the destructive alert.
+  const confirm = backend.callSync("rootSearch.performAction", { id: "builtin:shutdown", action: "open", query: "", confirmed: false })
+  assert.equal(confirm.data.confirm.destructive, true)
+  assert.deepEqual(calls.power, [])
+
+  // Confirmed → shutdown.exe /s /t 15 scheduled, toast carries Cancel.
+  const sd = backend.callSync("rootSearch.performAction", { id: "builtin:shutdown", action: "open", query: "", confirmed: true })
+  assert.equal(sd.data.toast.title, "Shut Down in 15 seconds")
+  assert.deepEqual(calls.power, [["shutdown", 15]])
+  const cancel = sd.data.toast.actions.find(a => a.id === "cancel-power")
+  assert.equal(cancel.call.method, "system.cancelPowerShutdown")
+  const cancelled = backend.callSync(cancel.call.method, null)
+  assert.equal(cancelled.ok, true)
+  assert.equal(calls.cancelPower, 1)
+
+  // Restart uses /r with the same schedule.
+  const rs = backend.callSync("rootSearch.performAction", { id: "builtin:restart", action: "open", query: "", confirmed: true })
+  assert.equal(rs.data.toast.title, "Restart in 15 seconds")
+  assert.deepEqual(calls.power[1], ["restart", 15])
+
+  // Sleep: no confirmation, closes the window with a HUD line.
+  const sl = backend.callSync("rootSearch.performAction", { id: "builtin:sleep", action: "open", query: "", confirmed: false })
+  assert.equal(sl.data.close, true)
+  assert.equal(sl.data.hud, "Sleeping…")
+  assert.deepEqual(calls.power[2], ["sleep", 0])
+
+  // Power actions never record frecency (they stay out of Suggestions).
+  const freq = backend.callSync("frecency.get", { id: "builtin:shutdown" })
+  assert.equal(freq.data, null)
   backend.dispose()
 })
