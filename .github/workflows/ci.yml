@@ -8,8 +8,9 @@ on:
 
 jobs:
   test:
-    # WarpBuild's 2-vCPU Ubuntu runner.
-    runs-on: warp-ubuntu-latest-x64-2x
+    # WarpBuild's 2-vCPU Ubuntu runner; the TEST_RUNNER repo variable
+    # overrides it (e.g. forks without the WarpBuild app set ubuntu-latest).
+    runs-on: ${{ vars.TEST_RUNNER || 'warp-ubuntu-latest-x64-2x' }}
     steps:
       - uses: actions/checkout@v4
 

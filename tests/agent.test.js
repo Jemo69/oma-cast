@@ -6,6 +6,12 @@ const path = require("node:path")
 const { spawnSync } = require("node:child_process")
 const Agent = require("../plugin/core/Agent.js")
 
+// The preflight and quoting contract runs through bash with stubbed
+// Omarchy tooling; there is nothing to exercise on Windows (the port's
+// agent hand-off is config-driven and covered by
+// electron/src/backend.test.js). [D]
+const bashOnly = { skip: process.platform === "win32" ? "bash/Omarchy tooling is Linux-only" : false }
+
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "oma-cast-agent-"))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -17,7 +23,7 @@ function fixture(t) {
   return { dir, env, script, check: extra => spawnSync("/bin/bash", ["-c", Agent.CHECK_SCRIPT], { env: { ...env, ...extra }, encoding: "utf8" }) }
 }
 
-test("preflight accepts configured agents and terminal providers without starting a session", t => {
+test("preflight accepts configured agents and terminal providers without starting a session", bashOnly, t => {
   const f = fixture(t)
   f.script("omarchy-agent", "exit 99\n")
   for (const terminal of ["foot.desktop", "com.mitchellh.ghostty.desktop", "kitty.desktop", "Alacritty.desktop"]) {
@@ -27,7 +33,7 @@ test("preflight accepts configured agents and terminal providers without startin
   }
 })
 
-test("preflight distinguishes missing tooling, default agent, installation and terminal", t => {
+test("preflight distinguishes missing tooling, default agent, installation and terminal", bashOnly, t => {
   const f = fixture(t)
   for (const [env, message] of [
     [{ TEST_AGENT: "" }, /Choose a default agent/],
@@ -42,7 +48,7 @@ test("preflight distinguishes missing tooling, default agent, installation and t
   assert.match(f.check().stdout, /missing omarchy-agent-prompt/)
 })
 
-test("questions remain one literal argument, including CLI flags and shell metacharacters", t => {
+test("questions remain one literal argument, including CLI flags and shell metacharacters", bashOnly, t => {
   const f = fixture(t)
   f.script("omarchy-agent", '[[ $# == 2 && $1 == --prompt ]] || exit 8\nprintf "%s" "$2"\n')
   const marker = path.join(f.dir, "must-not-exist")
