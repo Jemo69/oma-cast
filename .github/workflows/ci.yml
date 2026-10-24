@@ -67,8 +67,9 @@ jobs:
         working-directory: electron
         shell: pwsh
         # Everything under node_modules is dev-only (electron itself); the
-        # app requires nothing outside its own sources and assets.
-        run: npx --yes @electron/packager@20 . oma-cast --platform=win32 --arch=x64 --out=dist --overwrite --ignore='^/(\.jj|\.git|dist|node_modules)(/|$)'
+        # app requires nothing outside its own sources and assets. No asar:
+        # a test build stays inspectable/patchable.
+        run: npx --yes @electron/packager@20 . oma-cast --platform=win32 --arch=x64 --out=dist --overwrite --no-asar --ignore='^/(\.jj|\.git|dist|node_modules)(/|$)'
 
       - name: Smoke-check the package layout
         working-directory: electron
