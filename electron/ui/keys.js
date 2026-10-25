@@ -470,6 +470,9 @@ host.onVisibility(function(visible) {
 
 // Backend notifications (the QML Connections block).
 backend.onNotification(function(method, data) {
+  // config.json changed (Theme/Font/gaps/corner in the Settings view, or
+  // the file edited on disk): repaint in place.
+  if (method === "settings.configChanged") retheme()
   if (method === "agent.launchFailed" && W.shown) showToast("failure", data.message)
   if (method === "agent.launchReady") {
     host.dismiss()

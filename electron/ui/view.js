@@ -61,7 +61,16 @@ function itemRowEl(row, index) {
     var img = document.createElement("img")
     img.style.width = "100%"
     img.style.height = "100%"
-    backend.appsIcon(row.iconName).then(function(url) { if (url) img.src = url })
+    backend.appsIcon(row.iconName).then(function(url) {
+      if (url) { img.src = url; return }
+      // Nothing extracted (protected link, PowerShell missing): fall back to
+      // a generic window glyph so the icon column is never blank. [D]
+      img.remove()
+      if (iconBox.childElementCount) return
+      var g = document.createElement("span")
+      g.textContent = GLYPH_APP
+      iconBox.appendChild(g)
+    })
     iconBox.appendChild(img)
   } else if (row.glyph) {
     var g = document.createElement("span")

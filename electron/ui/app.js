@@ -9,7 +9,7 @@ var electron = require("electron")
 var ipcRenderer = electron.ipcRenderer
 var host = require("../src/host.js")
 var surface = require("../src/theme/surface.js")
-var themeRender = require("../src/theme/render.js")
+var themesLib = require("../src/themes.js")
 var appsLib = require("../src/apps.js")
 var backendLib = require("../src/backend.js")
 var gateLib = require("../src/pointer-gate.js")
@@ -28,6 +28,8 @@ var GLYPH_FAIL = ""        // nf-fa-warning
 var GLYPH_OK = ""        // nf-fa-check
 var GLYPH_FAV = ""        // nf-fa-star
 
+var GLYPH_APP = "\uf2d0"       // nf-fa-window-maximize (icon column fallback)
+
 var DEFAULT_GENERAL = {
   uiZoom: 1, windowMode: "expanded", escapeKeyBehavior: "pop-back-or-close",
   popToRootTimeout: 90, navigationBindings: "emacs", rootSearchSensitivity: "medium"
@@ -35,21 +37,27 @@ var DEFAULT_GENERAL = {
 
 // ---------------------------------------------------------------- wiring
 var paths = Paths.resolveWindows(function(name) { return process.env[name] })
+// Two theme roots: the bundled copy, and the user's place for themes
+// (%APPDATA%\oma-cast\themes\<name>\colors.toml — drop one there and it
+// shows up in the Theme setting row). [D]
 var themeDir = path.join(__dirname, "..", "themes")
-var colorsRaw = "", shellRaw = ""
-try { colorsRaw = fs.readFileSync(path.join(themeDir, "tokyo-night", "colors.toml"), "utf8") } catch (e) {}
-try { shellRaw = themeRender.renderShell(colorsRaw, fs.readFileSync(path.join(themeDir, "shell.toml.tpl"), "utf8"), false) } catch (e) {}
+var themeRoots = { bundledDir: themeDir, userDir: path.join(paths.config, "themes") }
 
 var config = Schema.withConfigDefaults(null)
 try { config = Schema.withConfigDefaults(JSON.parse(fs.readFileSync(paths.configFile, "utf8"))) } catch (e) {}
 
-var theme = surface.createTheme({
-  colorsRaw: colorsRaw,
-  shellRaw: shellRaw,
-  gapsOut: config.gapsOut,
-  cornerRadius: config.cornerRadius,
-  fontFamily: config.fontFamily || "'JetBrainsMono Nerd Font', 'Cascadia Mono NF', 'CaskaydiaCove Nerd Font', Consolas, 'Segoe UI Symbol', monospace"
-})
+var theme = null
+function buildTheme() {
+  var t = themesLib.resolve(config.theme, themeRoots)
+  theme = surface.createTheme({
+    colorsRaw: t.colorsRaw,
+    shellRaw: t.shellRaw,
+    gapsOut: config.gapsOut,
+    cornerRadius: config.cornerRadius,
+    fontFamily: config.fontFamily || "'JetBrainsMono Nerd Font', 'Cascadia Mono NF', 'CaskaydiaCove Nerd Font', Consolas, 'Segoe UI Symbol', monospace"
+  })
+}
+buildTheme()
 
 var backend = backendLib.createBackend({
   paths: paths,
@@ -58,6 +66,25 @@ var backend = backendLib.createBackend({
   log: function(level, line) { console.log(line) }
 })
 backend.start()
+config = backend.config
+
+// A config.json change — the Theme row ↵, or an edit on disk — repaints
+// without a reload: colours, font and the two geometry tokens all come
+// from config. [D]
+function themeSignature() {
+  return [config.theme, config.fontFamily, config.gapsOut, config.cornerRadius].join("|")
+}
+var lastThemeSignature = themeSignature()
+function retheme() {
+  config = backend.config
+  var sig = themeSignature()
+  if (sig === lastThemeSignature) return
+  lastThemeSignature = sig
+  buildTheme()
+  applyThemeVars()
+  layout()
+  renderAll()
+}
 
 var gate = gateLib.createPointerGate()
 

@@ -398,3 +398,79 @@ test("backend: shutdown schedules with a cancellable toast, sleep closes", () =>
   assert.equal(freq.data, null)
   backend.dispose()
 })
+
+// ---------------------------------------------------------------- themes
+test("themes: the bundled copy, the user's place for themes, and fallback", () => {
+  const themes = require("./themes")
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "oma-themes-"))
+  const bundled = path.join(root, "bundled")
+  const user = path.join(root, "user")
+  fs.mkdirSync(path.join(bundled, "tokyo-night"), { recursive: true })
+  fs.mkdirSync(path.join(user, "my-theme"), { recursive: true })
+  fs.mkdirSync(path.join(user, "not-a-theme"), { recursive: true })   // no colors.toml
+  fs.writeFileSync(path.join(bundled, "tokyo-night", "colors.toml"), 'background = "#1a1b26"\n')
+  fs.writeFileSync(path.join(bundled, "shell.toml.tpl"), "menu_bg = {{ background }}")
+  fs.writeFileSync(path.join(user, "my-theme", "colors.toml"), 'background = "#282828"\n')
+  const opts = { bundledDir: bundled, userDir: user }
+
+  assert.deepEqual(themes.listThemes(opts).map(t => [t.name, t.source]),
+    [["tokyo-night", "bundled"], ["my-theme", "user"]])
+  const mine = themes.resolve("my-theme", opts)
+  assert.equal(mine.source, "user")
+  assert.match(mine.shellRaw, /#282828/, "template rendered against the theme")
+  assert.equal(themes.resolve("does-not-exist", opts).name, "tokyo-night")
+  assert.deepEqual(themes.listThemes({ bundledDir: "", userDir: path.join(root, "nope") }), [])
+})
+
+test("backend: the Theme row cycles the themes on disk and announces the change", () => {
+  const { backend, paths } = setup()
+  // Dropping a theme into the user's place for themes is enough: no rebuild.
+  const userTheme = path.join(paths.config, "themes", "gruvbox")
+  fs.mkdirSync(userTheme, { recursive: true })
+  fs.writeFileSync(path.join(userTheme, "colors.toml"), 'background = "#282828"\n')
+
+  const rows = backend.callSync("rootSearch.search", { query: "theme", view: { kind: "settings" }, filter: "all" })
+  const row = rows.data[0].rows.find(r => r.id === "setting:config:theme")
+  assert.ok(row, "theme row present")
+  assert.equal(row.typeLabel, "tokyo-night")
+  assert.match(row.subtitle, /oma-cast\\themes/)
+
+  const seen = []
+  const off = backend.onNotification((m, d) => seen.push([m, d]))
+  const cycle = backend.callSync("rootSearch.performAction", { id: "setting:config:theme", action: "open", query: "", confirmed: true })
+  assert.match(cycle.data.toast.title, /Theme: gruvbox/)
+  const written = JSON.parse(fs.readFileSync(paths.configFile, "utf8"))
+  assert.equal(written.theme, "gruvbox")
+  assert.ok(seen.some(([m, d]) => m === "settings.configChanged" && d.key === "theme"), "renderer is told to repaint")
+
+  const list = backend.callSync("themes.list", null)
+  assert.deepEqual(list.data.map(t => t.name).sort(), ["gruvbox", "tokyo-night"])
+  const res = backend.callSync("themes.resolve", { name: "gruvbox" })
+  assert.deepEqual(res.data, { name: "gruvbox", source: "user" })
+  if (typeof off === "function") off()
+  backend.dispose()
+})
+
+// ------------------------------------------------------- icons and caret
+test("icons: paths are interpolated into the script, never trailing -Command args", () => {
+  const apps = require("./apps")
+  assert.ok(!apps.ICON_SCRIPT.includes("$args"), "powershell.exe joins -Command args into the script text")
+  const script = apps.ICON_SCRIPT
+    .replace("{{src}}", apps.psQuote("C:\\Users\\Jemo O'Brien\\Launcher.lnk"))
+    .replace("{{out}}", apps.psQuote("C:\\cache\\icons\\a.png"))
+  assert.match(script, /'C:\\Users\\Jemo O''Brien\\Launcher\.lnk'/)
+  assert.match(script, /\.lnk/, "resolves a Start Menu link to its target first")
+  assert.equal(apps.fileUrl("C:\\Users\\J D\\cache\\icons\\a.png"),
+    "file:///C:/Users/J%20D/cache/icons/a.png")
+})
+
+test("the caret blinks on the QML's 530 ms half-periods", () => {
+  const css = fs.readFileSync(path.join(__dirname, "..", "ui", "style.css"), "utf8")
+  assert.match(css, /@keyframes caret-blink/)
+  assert.match(css, /animation: caret-blink 1060ms step-end infinite/)
+  assert.match(css, /\.pill \.pill-caret \{ animation: caret-blink/)
+  // LauncherWindow.qml: NumberAnimation to 1, pause 530, to 0, pause 530.
+  const qml = fs.readFileSync(path.join(__dirname, "..", "..", "plugin", "ui", "LauncherWindow.qml"), "utf8")
+  const pauses = [...qml.matchAll(/PauseAnimation \{ duration: (\d+) \}/g)].map(m => Number(m[1]))
+  assert.ok(pauses.includes(530), "the QML caret's half-period is still 530")
+})

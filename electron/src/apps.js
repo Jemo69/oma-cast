@@ -24,18 +24,40 @@ var SCAN_SCRIPT = [
   "$out | ConvertTo-Json -Compress"
 ].join("\n")
 
+// PowerShell single-quoted string literal.
+function psQuote(value) {
+  return "'" + String(value).replace(/'/g, "''") + "'"
+}
+
 // Icon extraction: 32px associated icon → PNG in the icon cache.
+// The two paths are interpolated (PowerShell-quoted) rather than passed as
+// arguments after -Command: powershell.exe joins everything following
+// -Command into one command string, so trailing arguments were appended to
+// the last statement, the script failed, and every app row rendered with
+// no icon at all. Start Menu .lnk links resolve to their target first —
+// ExtractAssociatedIcon on the link itself often yields nothing. [D]
 var ICON_SCRIPT = [
-  "param([string]$Source, [string]$Out)",
+  "$src = {{src}}",
+  "$out = {{out}}",
   "Add-Type -AssemblyName System.Drawing",
-  "$src = $Source",
   "if (-not (Test-Path -LiteralPath $src)) { exit 1 }",
-  "$icon = [System.Drawing.Icon]::ExtractAssociatedIcon($src)",
+  "$file = $src",
+  "if ([System.IO.Path]::GetExtension($src) -eq '.lnk') {",
+  "  try { $t = (New-Object -ComObject WScript.Shell).CreateShortcut($src).TargetPath; if ($t) { $file = $t } } catch {}",
+  "}",
+  "$icon = $null",
+  "try { $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($file) } catch {}",
+  "if (-not $icon) { try { $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($src) } catch {} }",
   "if (-not $icon) { exit 1 }",
   "$bmp = $icon.ToBitmap()",
-  "$bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)",
+  "$bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)",
   "$bmp.Dispose(); $icon.Dispose()"
 ].join("\n")
+
+// file:/// URL for a cache PNG (encoded, so paths with spaces work).
+function fileUrl(p) {
+  return "file:///" + encodeURI(String(p).replace(/\\/g, "/")).replace(/#/g, "%23")
+}
 
 function createApps(opts) {
   opts = opts || {}
@@ -49,10 +71,10 @@ function createApps(opts) {
   apps.on = function(event, cb) { apps._listeners[event].push(cb) }
   function emit() { (apps._listeners.changed || []).forEach(function(cb) { cb() }) }
 
-  function runPowerShell(script, args, timeoutMs) {
+  function runPowerShell(script, timeoutMs) {
     return new Promise(function(resolve) {
       childProcess.execFile("powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script].concat(args || []),
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
         { timeout: timeoutMs || 30000, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
         function(err, stdout) { resolve({ error: err, stdout: String(stdout || "") }) })
     })
@@ -107,23 +129,17 @@ function createApps(opts) {
     var hash = crypto.createHash("sha1").update(String(linkPath)).digest("hex").slice(0, 16)
     var png = path.join(apps.iconDir, hash + ".png")
     if (fs.existsSync(png)) {
-      apps._icons[linkPath] = "file:///" + png.replace(/\\/g, "/")
+      apps._icons[linkPath] = fileUrl(png)
       return Promise.resolve(apps._icons[linkPath])
     }
     return new Promise(function(resolve) {
-      var script = "$src = $args[0]; $out = $args[1]; " +
-        "Add-Type -AssemblyName System.Drawing; " +
-        "if (-not (Test-Path -LiteralPath $src)) { exit 1 }; " +
-        "$icon = [System.Drawing.Icon]::ExtractAssociatedIcon($src); " +
-        "if (-not $icon) { exit 1 }; " +
-        "$bmp = $icon.ToBitmap(); $bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png); " +
-        "$bmp.Dispose(); $icon.Dispose()"
+      var script = ICON_SCRIPT.replace("{{src}}", psQuote(linkPath)).replace("{{out}}", psQuote(png))
       try { fs.mkdirSync(apps.iconDir, { recursive: true }) } catch (e) {}
       childProcess.execFile("powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script, linkPath, png],
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
         { timeout: 15000, windowsHide: true },
         function(err) {
-          var url = (!err && fs.existsSync(png)) ? "file:///" + png.replace(/\\/g, "/") : ""
+          var url = (!err && fs.existsSync(png)) ? fileUrl(png) : ""
           apps._icons[linkPath] = url
           resolve(url)
         })
@@ -144,5 +160,5 @@ function createApps(opts) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { createApps: createApps, SCAN_SCRIPT: SCAN_SCRIPT }
+  module.exports = { createApps: createApps, SCAN_SCRIPT: SCAN_SCRIPT, ICON_SCRIPT: ICON_SCRIPT, psQuote: psQuote, fileUrl: fileUrl }
 }

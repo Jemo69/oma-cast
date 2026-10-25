@@ -48,8 +48,9 @@ module.exports = {
 
   // Windows power actions. shutdown/restart schedule 15 s out so the
   // toast's Cancel (shutdown /a) can abort; sleep is delayed until the
-  // window has unmap. Note: with hibernation enabled, SetSuspendState
-  // hibernates instead of sleeping. [D]
+  // window has unmap. Uses PowerShell SetSuspendState('Suspend') so true
+  // sleep is invoked even when hibernation is enabled (rundll32 SetSuspendState
+  // erroneously hibernates due to a calling-convention mismatch). [D]
   power: function(kind, delay) {
     var d = Math.max(0, Number(delay) || 0)
     function run(bin, args) {
@@ -61,7 +62,14 @@ module.exports = {
     else if (kind === "restart") run("shutdown.exe", ["/r", "/t", String(d), "/c", "oma-cast"])
     else if (kind === "sleep") {
       setTimeout(function() {
-        run("rundll32.exe", ["powrprof.dll,SetSuspendState", "0,1,0"])
+        run("powershell.exe", [
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)"
+        ])
       }, 400)
     }
   },

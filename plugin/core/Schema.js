@@ -80,6 +80,9 @@ var configDefaults = {
   // the fallback row explains how to enable it), and the two window tokens
   // Style reads from Hyprland on Omarchy (same fallbacks, 5 / 0).
   hotkey: "Alt+Space",
+  // Launcher colours: a theme name resolved against themes/ (bundled) and
+  // %APPDATA%\oma-cast\themes (the user's place for themes). [D]
+  theme: "tokyo-night",
   fontFamily: "",
   agentCommand: "",
   gapsOut: 5,

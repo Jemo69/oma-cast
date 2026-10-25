@@ -84,6 +84,16 @@ html, body {
   width: 2px;                     /* max(1, space(2)) */
 }
 
+/* The QML caret's SequentialAnimation on opacity: 530 ms solid, 530 ms
+   hidden, infinite. step-end holds each keyframe instead of tweening. */
+@keyframes caret-blink {
+  0% { opacity: 1 }
+  50% { opacity: 0 }
+  100% { opacity: 1 }
+}
+#caret,
+.pill .pill-caret { animation: caret-blink 1060ms step-end infinite; }
+
 /* Argument pills (ref 04 §2.2 WidthSizer) */
 #pills { position: absolute; display: flex; gap: 6px; align-items: center; }
 .pill {

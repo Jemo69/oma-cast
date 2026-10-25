@@ -17,6 +17,8 @@ src/calculator-data.js  ECB rates (frankfurter.dev) + Intl time zones
 src/apps.js        Start Menu .lnk library: enumerate, icons, launch
 src/host.js        renderer-side adapters (clipboard, paste, external, agent)
 src/windows-settings.js  ms-settings: page table for the Windows Settings view
+src/themes.js        theme discovery (bundled + %APPDATA%\oma-cast\themes)
+                   and shell.toml rendering for surface.createTheme
 ui/index.html      the launcher surface
 ui/style.css       px-for-px port of the QML geometry at zoom 1
 ui/app.js          theme + geometry + header (LauncherWindow top half)
@@ -83,9 +85,16 @@ icons match the Omarchy default out of the box.
 Themes resolve through the real Omarchy pipeline: `themes/shell.toml.tpl`
 rendered against `themes/tokyo-night/colors.toml` with the same token,
 mix (awk rounding included) and gradient functions as
-`omarchy-theme-set-templates`. Tokyo Night is Omarchy's default theme; to
-port another one, replace `themes/tokyo-night/`. A live theme-switcher
-mirroring `omarchy theme set` is not wired up (Phase 2 territory). [D]
+`omarchy-theme-set-templates`. Tokyo Night is Omarchy's default theme.
+
+**The place for themes** is `%APPDATA%\oma-cast\themes\<name>\colors.toml`
+(next to `config.json`) — a directory with a `colors.toml` is a theme; it
+doesn't need a rebuild. The **Theme** row in the Settings view lists what
+is on disk (bundled first, then yours) and ↵ repaints the launcher in
+place — colours, font and the `gapsOut`/`cornerRadius` geometry all come
+from `config.json`, so `oma-cast call themes.list` and an edit of
+`"theme": "<name>"` do the same. A theme may ship its own `shell.toml` to
+override the bundled template. [D]
 
 ## Built-in commands beyond the Linux build
 
@@ -96,7 +105,7 @@ mirroring `omarchy theme set` is not wired up (Phase 2 territory). [D]
 | **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID |
 | **Search unduck** | `https://unduck.link?q=%s` as both a root fallback row and a quicklink with an argument pill |
 | **Windows Settings** | a pushed, searchable list of the Settings app's own `ms-settings:` deep links grouped by category (Themes, Display, Windows Update, privacy, …); also the first row of the launcher's Settings view. ↵ opens the page through `shell.openExternal` [D] |
-| **Shut Down / Restart / Sleep** | the Omarchy system actions' Windows equivalents: the first two ask the destructive confirm, then schedule `shutdown /s|/r /t 15` with a **Cancel** toast (`shutdown /a`); Sleep closes the window first and suspends via `SetSuspendState` (with hibernation enabled Windows hibernates instead) [D] |
+| **Shut Down / Restart / Sleep** | the Omarchy system actions' Windows equivalents: the first two ask the destructive confirm, then schedule `shutdown /s|/r /t 15` with a **Cancel** toast (`shutdown /a`); Sleep closes the window first and suspends via PowerShell `SetSuspendState('Suspend')` to ensure true sleep even when hibernation is enabled [D] |
 
 There is **no extension runtime** yet (SPEC Phase 5/§9): new capabilities
 land as built-ins in `plugin/core/RootSearch.js` + a service, which is how

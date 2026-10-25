@@ -16,6 +16,7 @@ var Agent = require("../../plugin/core/Agent.js")
 var FileSearch = require("../../plugin/core/FileSearch.js")
 var SettingsView = require("../../plugin/core/SettingsView.js")
 var winSettings = require("./windows-settings")
+var themes = require("./themes")
 var jsonStore = require("./json-store")
 var calcData = require("./calculator-data")
 
@@ -310,6 +311,17 @@ function createBackend(opts) {
   }
 
   // ------------------------------------------------------------ settings
+  // The place for themes: %APPDATA%\oma-cast\themes\<name>\colors.toml,
+  // next to config.json; the bundled copy ships inside the app.
+  var pathLib = require("path")
+  var themeRoots = {
+    bundledDir: pathLib.join(__dirname, "..", "themes"),
+    userDir: paths.config ? pathLib.join(paths.config, "themes") : ""
+  }
+  function themeNames() {
+    return themes.listThemes(themeRoots).map(function(t) { return t.name })
+  }
+  function themeChoiceBag() { return { themes: themeNames() } }
   // ↵ on a settings row cycles to the next value: "general" goes through
   // the same validated store path as the RPC, "config" rewrites
   // config.json (the hotkey is re-registered immediately). [D]
@@ -321,13 +333,15 @@ function createBackend(opts) {
     } catch (e) { throw new Error("cannot write " + paths.configFile + ": " + (e && e.message || e)) }
     if (key === "hotkey" && host.configChanged) host.configChanged()
     if (key === "fileSearchIncludeHidden" && fileIndex && fileIndex.setIncludeHidden) fileIndex.setIncludeHidden(value)
+    // The renderer repaints (theme / font / geometry come from config).
+    emit("settings.configChanged", { key: key, value: value })
   }
   function applySetting(id, action) {
     if (action !== "open") throw new Error("Unknown action " + action)
     var def = SettingsView.find(id)
     if (!def) throw new Error("Unknown setting " + id)
     var current = SettingsView.valueOf(def, settingsStore.loaded ? settingsStore.doc.general : {}, config)
-    var next = SettingsView.cycle(def, current)
+    var next = SettingsView.cycle(def, current, themeChoiceBag())
     if (def.scope === "general") {
       var patch = {}
       patch[def.key] = next
@@ -565,7 +579,7 @@ function createBackend(opts) {
         var sections
         if (view && view.kind === "settings") {
           var srows = SettingsView.rowsFor(
-            settingsStore.loaded ? settingsStore.doc.general : {}, config, query).map(toRow)
+            settingsStore.loaded ? settingsStore.doc.general : {}, config, query, themeChoiceBag()).map(toRow)
           // "Windows Settings" leads the launcher's own Settings view:
           // two ways in, both labelled settings. [D]
           var winBuiltin = candidatesById["builtin:windows-settings"]
@@ -727,6 +741,16 @@ function createBackend(opts) {
     })
 
     // Names from Raycast's calculator namespace (ref 02 §2).
+    Rpc.register(registry, "themes", {
+      // The bundled + user themes on disk (name, dir, source) — also what
+      // the Theme setting row cycles through.
+      list: function() { return themes.listThemes(themeRoots) },
+      resolve: function(data) {
+        var r = themes.resolve(String(data && data.name || ""), themeRoots)
+        return { name: r.name, source: r.source }
+      }
+    })
+
     Rpc.register(registry, "calculator", {
       calculate: function(data) { return calculate(String(data && data.query || "")) },
       historyGetAll: function() { return calculatorStore.loaded ? calculatorStore.doc.history : [] },
@@ -763,6 +787,7 @@ function createBackend(opts) {
   var configWatcher = null
   function loadConfig() {
     var fs = require("fs")
+    var before = JSON.stringify(config)
     try {
       config = Schema.withConfigDefaults(JSON.parse(fs.readFileSync(paths.configFile, "utf8")))
     } catch (e) {
@@ -770,6 +795,8 @@ function createBackend(opts) {
       config = Schema.withConfigDefaults(null)
     }
     calculatorData.ratesEnabled = config.currencyRates
+    // Edited on disk (or by the Settings view): the renderer repaints.
+    if (before !== JSON.stringify(config)) emit("settings.configChanged", { key: "*", value: null })
   }
 
   // --------------------------------------------------------------- start
