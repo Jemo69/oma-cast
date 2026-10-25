@@ -197,6 +197,7 @@ function placeholderText() {
   if (v.kind === "calculator-history") return "Search calculations…"
   if (v.kind === "settings") return "Search settings…"
   if (v.kind === "processes") return "Search processes…"
+  if (v.kind === "windows-settings") return "Search settings pages…"
   return "Search for apps and commands…"
 }
 

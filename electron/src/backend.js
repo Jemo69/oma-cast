@@ -15,10 +15,12 @@ var Calculator = require("../../plugin/core/Calculator.js")
 var Agent = require("../../plugin/core/Agent.js")
 var FileSearch = require("../../plugin/core/FileSearch.js")
 var SettingsView = require("../../plugin/core/SettingsView.js")
+var winSettings = require("./windows-settings")
 var jsonStore = require("./json-store")
 var calcData = require("./calculator-data")
 
-var VERSION = "0.1.0"
+// doctor/system.info report this: one source of truth with the installer.
+var VERSION = require("../package.json").version
 
 function createBackend(opts) {
   opts = opts || {}
@@ -287,6 +289,19 @@ function createBackend(opts) {
   function actionsForSetting() {
     return [{ id: "open", title: "Change", shortcut: "↵", section: "primary", icon: "\uf0ad" }]
   }
+  // A Windows Settings row opens the Settings app on that page; the
+  // builtin row ("Windows Settings") pushes the list itself.
+  function actionsForWindowsSetting() {
+    return [{ id: "open", title: "Open Settings Page", shortcut: "↵", section: "primary", icon: "\uf013" }]
+  }
+  function matchesWindowsBuiltin(c, query) {
+    var q = String(query || "").trim().toLowerCase()
+    if (!q) return true
+    var hay = (c.title + " " + c.subtitle + " " + (c.keywords || []).join(" ")).toLowerCase()
+    var parts = q.split(/\s+/)
+    for (var i = 0; i < parts.length; i++) if (hay.indexOf(parts[i]) < 0) return false
+    return true
+  }
   function actionsForProcess(row) {
     var list = [{ id: "open", title: "Kill Process", shortcut: "↵", section: "primary", icon: "\uf111" }]
     if (row && row.path) list.push({ id: "reveal", title: "Reveal in Explorer", shortcut: "Ctrl ↵", section: "primary", icon: "\uf06e" })
@@ -322,6 +337,17 @@ function createBackend(opts) {
       applyConfigValue(def.key, next)
     }
     return { toast: { style: "success", title: def.label + ": " + SettingsView.format(def, next) } }
+  }
+
+  // ms-settings: deep link — no confirmation, the Settings app decides
+  // what a page does on this Windows build. [D]
+  function windowsSettingAction(id, action) {
+    if (action !== "open") throw new Error("Unknown action " + action)
+    var uri = String(id).slice("winset:".length)
+    var page = winSettings.find(uri)
+    if (!page) throw new Error("Unknown settings page " + uri)
+    if (host.openExternal) host.openExternal(page.uri)
+    return { close: true, hud: "Opening " + page.title }
   }
 
   // ---------------------------------------------------- processes (kill)
@@ -368,6 +394,7 @@ function createBackend(opts) {
     var query = String(data && data.query || "").trim()
     // View rows resolve without a stored candidate.
     if (id.indexOf("setting:") === 0) return applySetting(id, action)
+    if (id.indexOf("winset:") === 0) return windowsSettingAction(id, action)
     if (id.indexOf("process:") === 0) return processAction(id, action)
     if (id.indexOf("file:") === 0) return fileAction(id, action)
     var candidate = decorated(id)
@@ -537,8 +564,17 @@ function createBackend(opts) {
         var ctx = searchContext()
         var sections
         if (view && view.kind === "settings") {
-          sections = [{ id: "settings", title: "", rows: SettingsView.rowsFor(
-            settingsStore.loaded ? settingsStore.doc.general : {}, config, query).map(toRow) }]
+          var srows = SettingsView.rowsFor(
+            settingsStore.loaded ? settingsStore.doc.general : {}, config, query).map(toRow)
+          // "Windows Settings" leads the launcher's own Settings view:
+          // two ways in, both labelled settings. [D]
+          var winBuiltin = candidatesById["builtin:windows-settings"]
+          if (winBuiltin && matchesWindowsBuiltin(winBuiltin, query)) srows.unshift(toRow(decorated(winBuiltin.id)))
+          sections = [{ id: "settings", title: "", rows: srows }]
+        } else if (view && view.kind === "windows-settings") {
+          sections = winSettings.sections(query).map(function(s) {
+            return { id: s.id, title: s.title, rows: s.rows.map(toRow) }
+          })
         } else if (view && view.kind === "processes") {
           if (processes && !processes.loading) processes.refresh()
           var needle = query.trim().toLowerCase()
@@ -577,6 +613,8 @@ function createBackend(opts) {
       getActions: function(data) {
         var rowId = String(data && data.id || "")
         if (rowId.indexOf("setting:") === 0) return actionsForSetting()
+        if (rowId.indexOf("winset:") === 0) return actionsForWindowsSetting()
+        if (rowId === "builtin:windows-settings") return [{ id: "open", title: "Open Windows Settings", shortcut: "↵", section: "primary", icon: "\uf17a" }]
         if (rowId.indexOf("process:") === 0) return actionsForProcess(processRow(String(rowId).slice("process:".length)))
         if (rowId.indexOf("file:") === 0) return FileSearch.actionsForFile()
         if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
@@ -600,6 +638,15 @@ function createBackend(opts) {
             { label: "Value", value: SettingsView.format(sdef, sval) },
             { label: "Scope", value: sdef.scope === "general" ? "settings.json" : "config.json" },
             { label: "Hint", value: sdef.hint }
+          ]
+        }
+        if (rowId.indexOf("winset:") === 0) {
+          var wpage = winSettings.find(String(rowId).slice("winset:".length))
+          if (!wpage) return []
+          return [
+            { label: "Setting", value: wpage.title },
+            { label: "Category", value: wpage.category },
+            { label: "URI", value: wpage.uri }
           ]
         }
         if (rowId.indexOf("process:") === 0) {

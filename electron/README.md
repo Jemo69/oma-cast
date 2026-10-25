@@ -16,6 +16,7 @@ src/json-store.js  port of services/JsonStore.qml (fs + atomic + 250 ms)
 src/calculator-data.js  ECB rates (frankfurter.dev) + Intl time zones
 src/apps.js        Start Menu .lnk library: enumerate, icons, launch
 src/host.js        renderer-side adapters (clipboard, paste, external, agent)
+src/windows-settings.js  ms-settings: page table for the Windows Settings view
 ui/index.html      the launcher surface
 ui/style.css       px-for-px port of the QML geometry at zoom 1
 ui/app.js          theme + geometry + header (LauncherWindow top half)
@@ -94,11 +95,12 @@ mirroring `omarchy theme set` is not wired up (Phase 2 territory). [D]
 | **Settings** | the Phase-2 stub made real: a pushed view over every window/hotkey/search/calculator setting; ↵ cycles values, `hotkey` re-registers immediately |
 | **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID |
 | **Search unduck** | `https://unduck.link?q=%s` as both a root fallback row and a quicklink with an argument pill |
+| **Windows Settings** | a pushed, searchable list of the Settings app's own `ms-settings:` deep links grouped by category (Themes, Display, Windows Update, privacy, …); also the first row of the launcher's Settings view. ↵ opens the page through `shell.openExternal` [D] |
 | **Shut Down / Restart / Sleep** | the Omarchy system actions' Windows equivalents: the first two ask the destructive confirm, then schedule `shutdown /s|/r /t 15` with a **Cancel** toast (`shutdown /a`); Sleep closes the window first and suspends via `SetSuspendState` (with hibernation enabled Windows hibernates instead) [D] |
 
 There is **no extension runtime** yet (SPEC Phase 5/§9): new capabilities
 land as built-ins in `plugin/core/RootSearch.js` + a service, which is how
-all four above were added.
+all five above were added.
 
 ## Windows substitutions [D]
 

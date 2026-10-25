@@ -175,12 +175,12 @@ function setup() {
     extensions: "", extensionSupport: "", clipboard: "", notesAttachments: "",
     cache: path.join(root, "cache"), state: path.join(root, "state"), logs: "", backups: "", runtime: ""
   }
-  const calls = { copy: [], openPath: [], reveal: [], configChanged: 0, power: [], cancelPower: 0 }
+  const calls = { copy: [], openPath: [], reveal: [], openExternal: [], configChanged: 0, power: [], cancelPower: 0 }
   const host = {
     copy: t => calls.copy.push(t),
     openPath: p => calls.openPath.push(p),
     reveal: p => calls.reveal.push(p),
-    openExternal: () => {},
+    openExternal: u => calls.openExternal.push(u),
     pasteText: () => {},
     checkCommand: (e, cb) => cb(true),
     configChanged: () => { calls.configChanged++ },
@@ -302,6 +302,65 @@ test("backend: Kill Process confirms, kills, removes and toasts", () => {
   assert.deepEqual(filtered.data[0].rows.map(x => x.pid), [555])
   const byPid = backend.callSync("rootSearch.search", { query: "9999", view: { kind: "processes" }, filter: "all" })
   assert.deepEqual(byPid.data[0].rows.map(x => x.pid), [9999])
+  backend.dispose()
+})
+
+// ------------------------------------------------------ windows settings
+test("Windows Settings: builtin, page table and category sections", () => {
+  const WS = require("./windows-settings")
+  const cmd = RS.BUILTINS.find(b => b.id === "builtin:windows-settings")
+  assert.equal(cmd.run.push.kind, "windows-settings")
+  assert.equal(cmd.glyph.codePointAt(0), 0xf17a)           // nf-fa-windows
+  assert.equal(cmd.platform, "windows")
+  assert.equal(RS.BUILTINS.find(b => b.id === "builtin:kill-process").platform, "windows")
+  assert.equal(RS.BUILTINS.find(b => b.id === "builtin:settings").platform, undefined)
+
+  const uris = WS.rows("").map(r => r.id)
+  assert.equal(new Set(uris).size, uris.length, "no duplicate pages")
+  assert.ok(WS.rows("windows update").some(r => r.id === "winset:ms-settings:windowsupdate"))
+  assert.ok(WS.rows("theme").some(r => r.id === "winset:ms-settings:personalization-themes"))
+  assert.deepEqual(WS.rows("no-such-page"), [])
+  assert.equal(WS.find("ms-settings:personalization-themes").category, "Personalization")
+  assert.equal(WS.find("ms-settings:nope"), null)
+  assert.deepEqual(WS.actionsFor().map(a => a.id), ["open"])
+
+  const secs = WS.sections("")
+  assert.ok(secs.length >= 10, "one section per category")
+  assert.ok(secs.every(s => s.rows.length > 0 && s.title))
+  const flat = secs.flatMap(s => s.rows.map(r => r.id))
+  assert.equal(flat.length, uris.length, "sections cover every page")
+  assert.equal(WS.sections("bluetooth").length, 1, "a query narrows the sections too")
+})
+
+test("backend: Windows Settings leads the Settings view and opens a page", () => {
+  const { backend, calls } = setup()
+
+  // The launcher's own Settings view opens with "Windows Settings".
+  const s = backend.callSync("rootSearch.search", { query: "", view: { kind: "settings" }, filter: "all" })
+  assert.equal(s.data[0].rows[0].id, "builtin:windows-settings")
+  const filtered = backend.callSync("rootSearch.search", { query: "hotkey", view: { kind: "settings" }, filter: "all" })
+  assert.ok(!filtered.data[0].rows.some(r => r.id === "builtin:windows-settings"))
+  assert.ok(filtered.data[0].rows.some(r => r.id === "setting:config:hotkey"))
+
+  // The pushed view: searchable, grouped, row actions and info.
+  const w = backend.callSync("rootSearch.search", { query: "theme", view: { kind: "windows-settings" }, filter: "all" })
+  const wids = w.data.flatMap(sec => sec.rows.map(r => r.id))
+  assert.ok(wids.includes("winset:ms-settings:personalization-themes"))
+  const acts = backend.callSync("rootSearch.getActions", { id: "winset:ms-settings:personalization-themes" })
+  assert.deepEqual(acts.data.map(a => a.id), ["open"])
+  const info = backend.callSync("rootSearch.getItemInfo", { id: "winset:ms-settings:windowsupdate", query: "" })
+  assert.equal(info.data[0].value, "Windows Update")
+  assert.equal(info.data[2].value, "ms-settings:windowsupdate")
+
+  // ↵ hands the URI to the shell, no confirmation (not destructive).
+  const open = backend.callSync("rootSearch.performAction", { id: "winset:ms-settings:personalization-themes", action: "open", query: "", confirmed: false })
+  assert.equal(open.data.close, true)
+  assert.match(open.data.hud, /Themes/)
+  assert.deepEqual(calls.openExternal, ["ms-settings:personalization-themes"])
+
+  // The builtin row pushes the list like any other command.
+  const push = backend.callSync("rootSearch.performAction", { id: "builtin:windows-settings", action: "open", query: "", confirmed: false })
+  assert.equal(push.data.push.kind, "windows-settings")
   backend.dispose()
 })
 

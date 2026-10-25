@@ -61,6 +61,20 @@ var BUILTINS = [
     glyph: "",                     // nf-fa-power-off
     keywords: ["kill", "process", "end", "terminate", "task manager", "taskkill"],
     run: { push: { kind: "processes", title: "Kill Process" } },
+    platform: "windows",             // no process list on the shell side
+    rootSearch: { when: "always" }
+  },
+  // The Settings app's own deep links (ms-settings:), one pushed view per
+  // category. The launcher's preferences are `builtin:settings`; this one
+  // hands over to Windows — themes, display, updates, privacy. [D]
+  {
+    id: "builtin:windows-settings",
+    title: "Windows Settings",
+    subtitle: "Open a Windows settings page",
+    glyph: "",                     // nf-fa-windows
+    keywords: ["windows settings", "system settings", "settings app", "windows", "personalization", "theme", "display", "bluetooth", "windows update"],
+    run: { push: { kind: "windows-settings", title: "Windows Settings" } },
+    platform: "windows",
     rootSearch: { when: "always" }
   },
   // Windows power actions (the Omarchy system actions' equivalent).
