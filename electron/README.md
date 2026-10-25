@@ -102,10 +102,18 @@ override the bundled template. [D]
 |---|---|
 | **File search** | a Files section in root search (SPEC §8.6 slice): name match first, then path, recency within a tier; Open / Reveal in Explorer / Copy Path. Chunked walk of home (or `fileSearchScopes`), 100k cap, 10-min re-walk, disk cache — no inotify watcher yet [D] |
 | **Settings** | the Phase-2 stub made real: a pushed view over every window/hotkey/search/calculator setting; ↵ cycles values, `hotkey` re-registers immediately |
-| **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID |
+| **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID. The snapshot service is created in `ui/app.js` and handed to the backend — the pushed view is empty without it — and the launcher's own processes (this pid + anything running from `process.execPath`) stay out of the list |
 | **Search unduck** | `https://unduck.link?q=%s` as both a root fallback row and a quicklink with an argument pill |
 | **Windows Settings** | a pushed, searchable list of the Settings app's own `ms-settings:` deep links grouped by category (Themes, Display, Windows Update, privacy, …); also the first row of the launcher's Settings view. ↵ opens the page through `shell.openExternal` [D] |
 | **Shut Down / Restart / Sleep** | the Omarchy system actions' Windows equivalents: the first two ask the destructive confirm, then schedule `shutdown /s|/r /t 15` with a **Cancel** toast (`shutdown /a`); Sleep closes the window first and suspends via PowerShell `SetSuspendState('Suspend')` to ensure true sleep even when hibernation is enabled [D] |
+
+The window also hands the backend the **file index** behind the Files
+section (`fileSearchScopes` → `roots`, cache in `%LOCALAPPDATA%\oma-cast\cache\file-index.json`)
+and calls `backend.visibility()` on every show/hide, which refreshes
+exchange rates, re-scans the Start Menu and re-walks files when stale.
+Both services and that hook were implemented and unit-tested (the tests
+inject them) but never wired into the window — Kill Process pushed an
+empty view and the Files section never appeared until this was fixed.
 
 There is **no extension runtime** yet (SPEC Phase 5/§9): new capabilities
 land as built-ins in `plugin/core/RootSearch.js` + a service, which is how

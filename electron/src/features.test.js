@@ -474,3 +474,40 @@ test("the caret blinks on the QML's 530 ms half-periods", () => {
   const pauses = [...qml.matchAll(/PauseAnimation \{ duration: (\d+) \}/g)].map(m => Number(m[1]))
   assert.ok(pauses.includes(530), "the QML caret's half-period is still 530")
 })
+
+// --------------------------------------- services the window must hand over
+test("the window wires the services the pushed views read", () => {
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "ui", "app.js"), "utf8")
+  assert.match(appSrc, /processes:\s*processesLib\.createProcesses\(/, "Kill Process gets its snapshot service")
+  assert.match(appSrc, /fileIndex:\s*fileIndexLib\.createFileIndex\(/, "Files gets its index")
+  assert.match(appSrc, /excludePaths:\s*\[process\.execPath\]/, "the launcher's own processes stay out of the list")
+  const keysSrc = fs.readFileSync(path.join(__dirname, "..", "ui", "keys.js"), "utf8")
+  assert.match(keysSrc, /backend\.visibility\(visible\)/, "show refreshes rates, apps and files")
+  // The backend only fills these views when it holds the service; without
+  // them the pushed view is empty and the tests still pass, because they
+  // inject one. Guard the wiring, not just the service.
+  const procs = require("./processes")
+  const apps = require("./apps")
+  assert.match(procs.LIST_SCRIPT, /OutputEncoding.*UTF8/, "the snapshot decodes as UTF-8")
+  assert.match(apps.SCAN_SCRIPT, /OutputEncoding.*UTF8/, "…and so does the Start Menu scan")
+  assert.ok(!apps.SCAN_SCRIPT.includes("$args"), "no trailing -Command arguments")
+})
+
+test("Kill Process: the snapshot drops the launcher's own processes", async () => {
+  const { createProcesses, LIST_SCRIPT } = require("./processes")
+  const rows = [
+    { pid: 777, name: "oma-cast", ws: 9999, path: "" },
+    { pid: 9001, name: "oma-cast", ws: 9, path: "C:\\Apps\\oma-cast\\oma-cast.exe" },
+    { pid: 9002, name: "oma-cast", ws: 8, path: "c:/apps/oma-cast/OMA-CAST.EXE" },
+    { pid: 4242, name: "chrome", ws: 500, path: "C:\\Program Files\\chrome.exe" },
+    { pid: 10, name: "system", ws: 1, path: "" }
+  ]
+  const svc = createProcesses({
+    ownPid: 777,
+    excludePaths: ["C:\\Apps\\oma-cast\\oma-cast.exe"],
+    execFile: (bin, args, opts, cb) => cb(null, JSON.stringify(rows))
+  })
+  await svc.refresh(true)
+  assert.deepEqual(svc.rows.map(r => r.pid), [4242, 10], "biggest first, own pid and own exe gone")
+  assert.ok(!LIST_SCRIPT.includes("$args"), "powershell.exe joins -Command args into the script text")
+})

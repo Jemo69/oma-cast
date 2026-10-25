@@ -9,6 +9,9 @@ var childProcess = require("child_process")
 
 var SCAN_SCRIPT = [
   "$ErrorActionPreference = 'SilentlyContinue'",
+  // Node decodes stdout as UTF-8; app names come back in the OEM codepage
+  // otherwise. Best effort.
+  "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}",
   "$shell = New-Object -ComObject WScript.Shell",
   "$dirs = @()",
   "if ($env:APPDATA) { $dirs += (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs') }",

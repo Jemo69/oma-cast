@@ -11,6 +11,8 @@ var host = require("../src/host.js")
 var surface = require("../src/theme/surface.js")
 var themesLib = require("../src/themes.js")
 var appsLib = require("../src/apps.js")
+var fileIndexLib = require("../src/file-index.js")
+var processesLib = require("../src/processes.js")
 var backendLib = require("../src/backend.js")
 var gateLib = require("../src/pointer-gate.js")
 var Paths = require("../../plugin/core/Paths.js")
@@ -59,9 +61,25 @@ function buildTheme() {
 }
 buildTheme()
 
+// The two snapshot services the pushed views read: the Kill Process list
+// and the file index behind the Files section. The backend only uses them
+// if they are handed over — without them Kill Process pushes an empty view
+// and Files never appears. The tests inject them, which is why this was
+// never caught off-Windows. [D]
+var fileRoots = (config.fileSearchScopes && config.fileSearchScopes.length) ? config.fileSearchScopes : [paths.home]
+
 var backend = backendLib.createBackend({
   paths: paths,
   apps: appsLib.createApps({ iconDir: path.join(paths.cache, "icons") }),
+  fileIndex: fileIndexLib.createFileIndex({
+    roots: fileRoots,
+    home: paths.home,
+    includeHidden: !!config.fileSearchIncludeHidden,
+    cachePath: path.join(paths.cache, "file-index.json")
+  }),
+  // Everything launched from our own exe (main, GPU, renderer) stays out
+  // of the list, as does this process.
+  processes: processesLib.createProcesses({ ownPid: process.pid, excludePaths: [process.execPath] }),
   host: host,
   log: function(level, line) { console.log(line) }
 })

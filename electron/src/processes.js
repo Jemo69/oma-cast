@@ -1,12 +1,18 @@
 // Running-process listing and termination for the Kill Process view
 // (SPEC Phase 8 first-party extras). PowerShell for the snapshot,
-// taskkill /F for the kill; our own pid is excluded so the launcher can't
-// commit suicide from its own list. [D]
+// taskkill /F for the kill; the launcher's own processes are excluded so
+// it cannot commit suicide from its own list — our pid, plus anything
+// running from our own exe (main, GPU and renderer processes all share
+// the path). [D]
 var childProcess = require("child_process")
 
 // name + pid + working set, biggest consumers first.
 const LIST_SCRIPT = [
   "$ErrorActionPreference = 'SilentlyContinue'",
+  // Node decodes stdout as UTF-8; without this a non-ASCII process name
+  // arrives in the OEM codepage. Best effort: a failure here must not
+  // cost the whole list.
+  "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}",
   "$out = Get-Process | Where-Object { $_.Id -ne 0 -and $_.Id -ne 4 } | ForEach-Object {",
   "  [PSCustomObject]@{ pid = $_.Id; name = $_.ProcessName; ws = [int64]($_.WorkingSet64); path = $(try { $_.Path } catch { '' }) }",
   "}",
@@ -29,6 +35,9 @@ function createProcesses(opts) {
   var state = { rows: [], at: 0, loading: false }
   var listeners = { changed: [] }
   var own = opts.ownPid || process.pid
+  // Path comparison: the snapshot gives Windows paths, callers may not.
+  function norm(p) { return String(p || "").replace(/\//g, "\\").toLowerCase() }
+  var excludePaths = (opts.excludePaths || []).map(norm)
 
   function emit() { (listeners.changed || []).forEach(function(cb) { cb() }) }
 
@@ -50,7 +59,10 @@ function createProcesses(opts) {
         try { parsed = JSON.parse(res.stdout) || [] } catch (e) { parsed = [] }
         if (!Array.isArray(parsed)) parsed = [parsed]
         state.rows = parsed
-          .filter(function(r) { return r && Number(r.pid) > 0 && Number(r.pid) !== own && r.name })
+          .filter(function(r) {
+            if (!r || Number(r.pid) <= 0 || Number(r.pid) === own || !r.name) return false
+            return excludePaths.indexOf(norm(r.path)) < 0
+          })
           .map(function(r) {
             return { pid: Number(r.pid), name: String(r.name), ws: Number(r.ws) || 0, path: String(r.path || "") }
           })

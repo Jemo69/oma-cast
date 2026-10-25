@@ -446,6 +446,9 @@ function prepare() {
 }
 
 host.onVisibility(function(visible) {
+  // The backend's own show handler (QML's Connections block): refresh
+  // exchange rates, re-scan the Start Menu, re-walk files when stale.
+  backend.visibility(visible)
   if (!W.shown && visible) {
     W.shown = true
     prepare()
