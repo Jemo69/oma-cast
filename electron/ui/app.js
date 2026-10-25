@@ -10,6 +10,7 @@ var ipcRenderer = electron.ipcRenderer
 var host = require("../src/host.js")
 var surface = require("../src/theme/surface.js")
 var themesLib = require("../src/themes.js")
+var elideLeft = require("../src/text.js").elideLeft
 var appsLib = require("../src/apps.js")
 var fileIndexLib = require("../src/file-index.js")
 var processesLib = require("../src/processes.js")
@@ -273,7 +274,9 @@ function renderHeader() {
   var room = (filterVisible ? el.filterbutton.offsetLeft - px(12) : headerW - px(20)) - queryX
   var pillsVisible = el.pills.childElementCount > 0
   var pillsW = pillsVisible ? el.pills.offsetWidth : 0
-  var implicitW = measure(W.query || placeholderText(), queryFontPx + "px " + L.fontFamily)
+  var queryFont = queryFontPx + "px " + L.fontFamily
+  var full = W.query || (pillsVisible ? "" : placeholderText())
+  var implicitW = measure(full, queryFont)
   var queryW = Math.min(implicitW, room - (pillsVisible ? pillsW + px(10) : 0))
 
   el.query.style.left = queryX + "px"
@@ -281,7 +284,11 @@ function renderHeader() {
   el.query.style.top = "50%"
   el.query.style.transform = "translateY(-50%)"
   el.query.style.fontSize = queryFontPx + "px"
-  el.query.textContent = W.query || (pillsVisible ? "" : placeholderText())
+  // Text.ElideLeft: when the query outgrows the room, cut the front and
+  // keep the tail — on the logical string, so the order never flips.
+  el.query.textContent = implicitW > queryW
+    ? elideLeft(full, queryW, function(t) { return measure(t, queryFont) })
+    : full
   el.query.style.opacity = W.query ? 1 : 0.45
   el.pills.style.left = (queryX + (W.query ? queryW : 0) + px(10)) + "px"
 
@@ -289,7 +296,7 @@ function renderHeader() {
   var caretVisible = W.shown && !W.actionPanelOpen && W.argFocus < 0
   el.caret.style.display = caretVisible ? "block" : "none"
   el.caret.style.height = (queryFontPx + theme.space(4)) + "px"
-  var contentW = W.query ? Math.min(measure(W.query, queryFontPx + "px " + L.fontFamily), queryW) : 0
+  var contentW = W.query ? Math.min(measure(W.query, queryFont), queryW) : 0
   el.caret.style.left = (queryX + (W.query ? contentW + theme.space(1) : 0)) + "px"
   el.caret.style.top = "50%"
   el.caret.style.transform = "translateY(-50%)"
@@ -315,9 +322,15 @@ function renderPills() {
     pill.className = "pill" + (focused ? " focused" : "")
     pill.style.height = px(28) + "px"
     var label = document.createElement("span")
-    label.textContent = value || (def.placeholder + (def.required ? "" : " (optional)"))
+    var pillFont = fontPx("body") + "px " + L.fontFamily
+    var text = value || (def.placeholder + (def.required ? "" : " (optional)"))
+    var textW = measure(text, pillFont)
+    var pillW = Math.min(px(220), textW + px(20))
+    pill.style.width = pillW + "px"
+    // The text area: clientWidth (border-box) minus the 10 px side padding.
+    var areaW = Math.max(0, pillW - px(20) - 2)
+    label.textContent = textW > areaW ? elideLeft(text, areaW, function(t) { return measure(t, pillFont) }) : text
     label.style.opacity = value ? 1 : 0.5
-    pill.style.width = Math.min(px(220), measure(label.textContent, fontPx("body") + "px " + L.fontFamily) + px(20)) + "px"
     pill.appendChild(label)
     if (focused) {
       var caret = document.createElement("div")
@@ -325,7 +338,8 @@ function renderPills() {
       caret.style.height = (fontPx("body") + theme.space(2)) + "px"
       caret.style.top = "50%"
       caret.style.transform = "translateY(-50%)"
-      var lw = value ? Math.min(measure(label.textContent, fontPx("body") + "px " + L.fontFamily), pill.clientWidth - px(20)) : 0
+      // clientWidth is 0 while the pill is detached — use the width just set.
+      var lw = value ? Math.min(measure(label.textContent, pillFont), areaW) : 0
       caret.style.left = (px(10) + lw + theme.space(1)) + "px"
       pill.appendChild(caret)
     }

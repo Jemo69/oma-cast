@@ -393,7 +393,11 @@ function paintPanel(panelState) {
   list.innerHTML = ""
   panelState.visible.forEach(function(action, index) { list.appendChild(panelRowEl(action, index, panelState)) })
   var search = panelState.el.querySelector(".panel-search span")
-  search.textContent = panelState.filter || panelState.placeholder
+  var filterText = panelState.filter || panelState.placeholder
+  // ActionPanel.qml: elide the filter text at the start, LTR.
+  var searchFont = "12px " + look().fontFamily
+  var searchRoom = Math.max(0, (search.parentElement ? search.parentElement.clientWidth : 0) - 28)
+  search.textContent = elideLeft(filterText, searchRoom, function(t) { return measure(t, searchFont) })
   search.className = panelState.filter ? "filled" : ""
 }
 

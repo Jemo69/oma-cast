@@ -511,3 +511,32 @@ test("Kill Process: the snapshot drops the launcher's own processes", async () =
   assert.deepEqual(svc.rows.map(r => r.pid), [4242, 10], "biggest first, own pid and own exe gone")
   assert.ok(!LIST_SCRIPT.includes("$args"), "powershell.exe joins -Command args into the script text")
 })
+
+// --------------------------------------------------------------- text elide
+test("Text.ElideLeft keeps the tail and never reorders the query", () => {
+  const { elideLeft } = require("./text")
+  const m = t => t.length * 8                       // 8 px per character
+
+  // The bug: `direction: rtl` (the left-ellipsis CSS trick) flipped any
+  // query whose first strong character is not LTR — "1 rem to px" read
+  // back as "rem to px 1".
+  assert.equal(elideLeft("1 rem to px", 1000, m), "1 rem to px")
+  assert.equal(elideLeft("16 px to rem", 1000, m), "16 px to rem")
+  assert.equal(elideLeft("1 rem to px", 11 * 8, m), "1 rem to px")   // exactly fits
+
+  // Out of room: the front is cut, the tail stays, "…" marks the cut.
+  assert.equal(elideLeft("1 rem to px", 56, m), "… to px")
+  assert.equal(elideLeft("hello", 4, m), "…", "only room for the mark")
+  assert.equal(elideLeft("hello", 0, m), "", "no room at all")
+  assert.equal(elideLeft("", 56, m), "")
+})
+
+test("the query, pills and panel filter are LTR (the rtl trick reordered them)", () => {
+  const css = fs.readFileSync(path.join(__dirname, "..", "ui", "style.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")                       // ignore comments
+  assert.ok(!/direction:\s*rtl/.test(css), "no direction: rtl left in the UI")
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "ui", "app.js"), "utf8")
+  assert.match(appSrc, /elideLeft\(full, queryW/, "the query elides through src/text.js")
+  const viewSrc = fs.readFileSync(path.join(__dirname, "..", "ui", "view.js"), "utf8")
+  assert.match(viewSrc, /elideLeft\(filterText/, "so does the action-panel filter")
+})

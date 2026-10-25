@@ -74,8 +74,9 @@ html, body {
   overflow: hidden;
   color: var(--fg);
   font-family: var(--font-menu);
-  direction: rtl;                 /* Text.ElideLeft */
-  text-align: left;
+  /* LTR: the elide is done in JS (src/text.js). `direction: rtl` — the
+     usual left-ellipsis trick — reordered queries like "1 rem to px". */
+  overflow: hidden;
 }
 
 #caret {
@@ -108,7 +109,6 @@ html, body {
 .pill span {
   padding: 0 10px;
   white-space: nowrap; overflow: hidden;
-  direction: rtl; text-align: left;
   color: var(--fg);
   font-family: var(--font-menu);
   line-height: 1;
@@ -419,7 +419,6 @@ html, body {
   font-family: var(--font-menu);
   font-size: 12px;
   white-space: nowrap; overflow: hidden;
-  direction: rtl; text-align: left;
 }
 .panel .panel-search span.filled { opacity: 1; }
 

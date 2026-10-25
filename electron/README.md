@@ -82,6 +82,15 @@ glyph (`U+F0xx`, `U+F06A9`, …) are the exact same codepoints in the same
 fonts — `omarchy.ttf` and JetBrainsMono Nerd Font are bundled, so text and
 icons match the Omarchy default out of the box.
 
+Text elide is `Text.ElideLeft` ported to `src/text.js`: the query, the
+argument pills and the panel filter cut the **front** and keep the tail.
+The DOM way to get a left ellipsis is `direction: rtl` + `text-align:
+left`, and that was the first attempt — but it flips the paragraph
+direction, so the bidi algorithm reorders anything whose first strong
+character is not LTR (`1 rem to px` rendered as `rem to px 1`). The
+elide therefore happens in JS on the logical string and the elements stay
+LTR. [D]
+
 Themes resolve through the real Omarchy pipeline: `themes/shell.toml.tpl`
 rendered against `themes/tokyo-night/colors.toml` with the same token,
 mix (awk rounding included) and gradient functions as
