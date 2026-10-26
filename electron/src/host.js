@@ -7,6 +7,19 @@ var clipboard = electron.clipboard
 var ipcRenderer = electron.ipcRenderer
 var shell = electron.shell
 
+// "Take me there": main answers whether <exe> already has a window (it
+// also drops the close-time focus hand-back so the app keeps focus).
+// cb is settled exactly once — by the reply, an error, or the 2.5 s
+// safety timer — so a launch can never be swallowed. [D]
+var focusSeq = 0
+var focusPending = {}
+if (ipcRenderer && typeof ipcRenderer.on === "function") {
+  ipcRenderer.on("focus-app-result", function(e, res) {
+    var fn = res && focusPending[res.id]
+    if (fn) fn(!!res.taken)
+  })
+}
+
 module.exports = {
   copy: function(text) { clipboard.writeText(String(text === undefined || text === null ? "" : text)) },
   readText: function() { return clipboard.readText() },
@@ -80,6 +93,22 @@ module.exports = {
   },
 
   dismiss: function() { ipcRenderer.send("dismiss") },
+  focusAppWindow: function(name, cb) {
+    var id = ++focusSeq
+    var done = false
+    var timer = setTimeout(function() { settle(false) }, 2500)
+    function settle(taken) {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      if (focusPending[id]) delete focusPending[id]
+      cb(taken)
+    }
+    focusPending[id] = settle
+    try {
+      ipcRenderer.send("host-focus-app", { id: id, name: String(name || "") })
+    } catch (e) { settle(false) }
+  },
   refocus: function() { ipcRenderer.send("refocus") },
   configChanged: function() { ipcRenderer.send("host-config-changed") },
   onVisibility: function(cb) { ipcRenderer.on("visibility", function(e, v) { cb(v) }) },

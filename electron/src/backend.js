@@ -331,7 +331,9 @@ function createBackend(opts) {
     try {
       require("fs").writeFileSync(paths.configFile, JSON.stringify(config, null, 2) + "\n")
     } catch (e) { throw new Error("cannot write " + paths.configFile + ": " + (e && e.message || e)) }
-    if (key === "hotkey" && host.configChanged) host.configChanged()
+    // hotkey: main re-registers the accelerator; openAtLogin: main
+    // re-applies the HKCU Run login item (app.setLoginItemSettings). [D]
+    if ((key === "hotkey" || key === "openAtLogin") && host.configChanged) host.configChanged()
     if (key === "fileSearchIncludeHidden" && fileIndex && fileIndex.setIncludeHidden) fileIndex.setIncludeHidden(value)
     // The renderer repaints (theme / font / geometry come from config).
     emit("settings.configChanged", { key: key, value: value })
@@ -402,6 +404,33 @@ function createBackend(opts) {
     throw new Error("Unknown action " + action)
   }
 
+  // ↵ on an app: if that program already has a window, take the user
+  // there instead of spawning a second instance — main asks the focus
+  // helper (process → hwnd → restore + focus) and answers async; only
+  // "not running" (or no bridge) falls back to the launch. Rows without
+  // a .exe target (Store/MSIX) never ask: activating their AppsID brings
+  // up the existing instance on its own. [D]
+  function launchApp(candidate) {
+    var exe = ""
+    if (apps) {
+      var list = apps.entries || []
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i]
+        if (e && e.id === candidate.appId && e.target && /\.exe$/i.test(String(e.target))) {
+          exe = String(e.target).replace(/\\/g, "/").split("/").pop().replace(/\.exe$/i, "")
+          break
+        }
+      }
+    }
+    if (exe && host.focusAppWindow) {
+      host.focusAppWindow(exe, function(taken) {
+        if (!taken && apps) apps.launch(candidate.appId)
+      })
+      return
+    }
+    if (apps) apps.launch(candidate.appId)
+  }
+
   function performAction(data) {
     var id = String(data && data.id || "")
     var action = String(data && data.action || "open")
@@ -418,7 +447,7 @@ function createBackend(opts) {
       switch (candidate.kind) {
         case "app":
           recordVisit(id, query)
-          if (apps) apps.launch(candidate.appId)
+          launchApp(candidate)
           return { close: true }
         case "builtin":
           if (candidate.run.power) {
@@ -521,6 +550,9 @@ function createBackend(opts) {
           uptimeMs: nowMs() - startedAt,
           candidates: candidates.length,
           appLibrary: !!apps,
+          // How many Start Menu / Desktop / Store entries the library
+          // holds — `oma-cast doctor` prints it to catch a short list. [D]
+          applications: apps ? apps.entries.length : 0,
           methods: Rpc.methods(registry)
         }
       },
@@ -795,8 +827,13 @@ function createBackend(opts) {
       config = Schema.withConfigDefaults(null)
     }
     calculatorData.ratesEnabled = config.currencyRates
-    // Edited on disk (or by the Settings view): the renderer repaints.
-    if (before !== JSON.stringify(config)) emit("settings.configChanged", { key: "*", value: null })
+    // Edited on disk (by hand or by `oma-cast.ps1 install`): the renderer
+    // repaints and main re-applies the hotkey and the login item — this
+    // is how a config edit reaches the process that owns both. [D]
+    if (before !== JSON.stringify(config)) {
+      emit("settings.configChanged", { key: "*", value: null })
+      if (host.configChanged) host.configChanged()
+    }
   }
 
   // --------------------------------------------------------------- start

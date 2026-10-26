@@ -1,7 +1,10 @@
-// Windows application library: Start Menu shortcuts stand in for Omarchy's
-// shell.appLibrary. Enumerates .lnk files (user + machine scopes) through
-// one PowerShell pass, extracts lazily cached PNG icons, launches through
-// the shell. Async like DesktopEntries: `refresh()` repopulates and emits.
+// Windows application library: Start Menu and Desktop shortcuts stand in
+// for Omarchy's shell.appLibrary, plus Store/MSIX apps (they ship no .lnk
+// anywhere — Notion from the Store was invisible until they were added).
+// One PowerShell pass enumerates .lnk files (user + machine Start Menu,
+// user + public Desktop) and shell:AppsFolder rows, then icons are
+// extracted lazily and launches go through the shell. Async like
+// DesktopEntries: `refresh()` repopulates and emits. [D]
 var fs = require("fs")
 var path = require("path")
 var crypto = require("crypto")
@@ -13,9 +16,13 @@ var SCAN_SCRIPT = [
   // otherwise. Best effort.
   "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}",
   "$shell = New-Object -ComObject WScript.Shell",
+  // .lnk rows: user Start Menu, machine Start Menu, then both Desktops —
+  // installers scatter shortcuts across all four. [D]
   "$dirs = @()",
   "if ($env:APPDATA) { $dirs += (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs') }",
   "if ($env:ProgramData) { $dirs += (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs') }",
+  "try { $d = [Environment]::GetFolderPath('Desktop'); if ($d) { $dirs += $d } } catch {}",
+  "if ($env:PUBLIC) { $d = Join-Path $env:PUBLIC 'Desktop'; if (Test-Path -LiteralPath $d) { $dirs += $d } }",
   "$out = @()",
   "foreach ($d in $dirs) {",
   "  if (-not (Test-Path -LiteralPath $d)) { continue }",
@@ -24,6 +31,22 @@ var SCAN_SCRIPT = [
   "    $out += [PSCustomObject]@{ name = $_.BaseName; link = $_.FullName; target = $s.TargetPath }",
   "  }",
   "}",
+  // Store / MSIX apps (AppID \"Package!App\") have no .lnk in any of those
+  // folders: enumerate shell:AppsFolder so they show up too. Get-StartApps
+  // when Windows ships it, the shell namespace as the in-box fallback. [D]
+  "$store = @()",
+  "try {",
+  "  if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {",
+  "    $store = @(Get-StartApps | Where-Object { $_.AppID -like '*!*' } | ForEach-Object { [PSCustomObject]@{ name = $_.Name; appid = $_.AppID } })",
+  "  }",
+  "} catch {}",
+  "if (-not $store -or $store.Count -eq 0) {",
+  "  try {",
+  "    $ns = (New-Object -ComObject Shell.Application).NameSpace('shell:AppsFolder')",
+  "    if ($ns) { $store = @($ns.Items() | ForEach-Object { try { if ($_.Path -like '*!*') { [PSCustomObject]@{ name = $_.Name; appid = $_.Path } } } catch {} }) }",
+  "  } catch {}",
+  "}",
+  "foreach ($a in $store) { if ($a -and $a.name -and $a.appid) { $out += [PSCustomObject]@{ name = $a.name; link = ''; target = ''; appid = $a.appid } } }",
   "$out | ConvertTo-Json -Compress"
 ].join("\n")
 
@@ -95,22 +118,30 @@ function createApps(opts) {
       if (!Array.isArray(parsed)) parsed = [parsed]
       var seen = {}
       var out = []
-      // Later entries are machine-scope (script order: user first); keep the
-      // first occurrence of each name, drop empty links and invalid paths.
+      // Script order: user Start Menu, machine Start Menu, Desktops, then
+      // the Store rows — keep the first of each name (a .lnk beats a Store
+      // row: it has a real icon) and drop nameless rows. [D]
       for (var i = 0; i < parsed.length; i++) {
         var row = parsed[i]
-        if (!row || !row.name || !row.link) continue
+        if (!row || !row.name) continue
+        var link = String(row.link || "")
+        var appid = String(row.appid || "")
+        if (!link && !appid) continue
         var key = String(row.name).toLowerCase()
         if (seen[key]) continue
         seen[key] = true
+        // A Store/MSIX row has no file on disk: a uwp: id routes launch
+        // through shell:AppsFolder and the icon slot to apps.iconSource,
+        // which answers \"\" so the row shows the generic window glyph. [D]
+        var id = link || ("uwp:" + appid)
         out.push({
-          id: String(row.link),
+          id: id,
           name: String(row.name),
           // The icon slot is the .lnk path itself: apps.iconSource extracts
           // and caches its associated icon lazily. [D]
-          icon: String(row.link),
+          icon: id,
           target: String(row.target || ""),
-          link: String(row.link),
+          link: link,
           genericName: "",
           keywords: [],
           noDisplay: false
@@ -127,6 +158,10 @@ function createApps(opts) {
   // or "" (rows without icons just show the glyph slot empty). [D]
   apps.iconSource = function(linkPath) {
     if (!linkPath) return Promise.resolve("")
+    // Store/MSIX rows point at nothing on disk: answer \"\" at once so the
+    // row falls back to the generic window glyph instead of spawning a
+    // doomed extraction attempt per row. [D]
+    if (String(linkPath).indexOf("uwp:") === 0) return Promise.resolve("")
     if (apps._icons[linkPath] !== undefined) return Promise.resolve(apps._icons[linkPath])
     if (!apps.iconDir) return Promise.resolve("")
     var hash = crypto.createHash("sha1").update(String(linkPath)).digest("hex").slice(0, 16)
@@ -151,9 +186,11 @@ function createApps(opts) {
 
   // Launch through the shell (ShellExecute on the .lnk): UAC-aware, runs
   // the shortcut's target with its arguments and working directory.
+  // What explorer.exe gets: the .lnk itself (ShellExecute, UAC-aware), or
+  // a Store/MSIX app's AppsFolder path — \"shell:AppsFolder\\<AppID>\". [D]
   apps.launch = function(linkPath) {
     return new Promise(function(resolve) {
-      childProcess.execFile("explorer.exe", [String(linkPath)], { windowsHide: true }, function(err) {
+      childProcess.execFile("explorer.exe", [launchArg(linkPath)], { windowsHide: true }, function(err) {
         resolve(err ? String(err.message || err) : "")
       })
     })
@@ -162,6 +199,11 @@ function createApps(opts) {
   return apps
 }
 
+function launchArg(id) {
+  var s = String(id || "")
+  return s.indexOf("uwp:") === 0 ? "shell:AppsFolder\\" + s.slice(4) : s
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { createApps: createApps, SCAN_SCRIPT: SCAN_SCRIPT, ICON_SCRIPT: ICON_SCRIPT, psQuote: psQuote, fileUrl: fileUrl }
+  module.exports = { createApps: createApps, SCAN_SCRIPT: SCAN_SCRIPT, ICON_SCRIPT: ICON_SCRIPT, psQuote: psQuote, fileUrl: fileUrl, launchArg: launchArg }
 }

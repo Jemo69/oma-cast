@@ -8,13 +8,14 @@ component-for-component rather than redesigned. [D]
 
 ```
 main.js            host layer: overlay window, Alt+Space hotkey, CLI pipe,
-                   paste orchestration (SendInput), HUD toasts
+                   paste orchestration (SendInput), HUD toasts, Open at
+                   Login (HKCU Run) and the focus hand-back helper
 src/backend.js     port of plugin/Backend.qml (same RPC surface, same names)
 src/theme/         port of omarchy-theme-color / -set-templates + the
                    Color/Style/Border singletons (exact token resolution)
 src/json-store.js  port of services/JsonStore.qml (fs + atomic + 250 ms)
 src/calculator-data.js  ECB rates (frankfurter.dev) + Intl time zones
-src/apps.js        Start Menu .lnk library: enumerate, icons, launch
+src/apps.js        Start Menu/Desktop .lnk + Store apps: enumerate, icons, launch
 src/host.js        renderer-side adapters (clipboard, paste, external, agent)
 src/windows-settings.js  ms-settings: page table for the Windows Settings view
 src/themes.js        theme discovery (bundled + %APPDATA%\oma-cast\themes)
@@ -60,7 +61,7 @@ bin\oma-cast.ps1 toggle
 bin\oma-cast.ps1 call system.info
 bin\oma-cast.ps1 run builtin:calculator-history
 bin\oma-cast.ps1 doctor
-bin\oma-cast.ps1 install     # PATH shim in %LOCALAPPDATA%\oma-cast\bin + Startup shortcut
+bin\oma-cast.ps1 install     # PATH shim in %LOCALAPPDATA%\oma-cast\bin + Open at Login
 ```
 
 ## What is shared with the Linux build
@@ -110,7 +111,7 @@ override the bundled template. [D]
 | command | what it does |
 |---|---|
 | **File search** | a Files section in root search (SPEC §8.6 slice): name match first, then path, recency within a tier; Open / Reveal in Explorer / Copy Path. Chunked walk of home (or `fileSearchScopes`), 100k cap, 10-min re-walk, disk cache — no inotify watcher yet [D] |
-| **Settings** | the Phase-2 stub made real: a pushed view over every window/hotkey/search/calculator setting; ↵ cycles values, `hotkey` re-registers immediately |
+| **Settings** | the Phase-2 stub made real: a pushed view over every window/hotkey/search/calculator setting; ↵ cycles values — `hotkey` re-registers and **Open at Login** re-applies immediately |
 | **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID. The snapshot service is created in `ui/app.js` and handed to the backend — the pushed view is empty without it — and the launcher's own processes (this pid + anything running from `process.execPath`) stay out of the list |
 | **Search unduck** | `https://unduck.link?q=%s` as both a root fallback row and a quicklink with an argument pill |
 | **Windows Settings** | a pushed, searchable list of the Settings app's own `ms-settings:` deep links grouped by category (Themes, Display, Windows Update, privacy, …); also the first row of the launcher's Settings view. ↵ opens the page through `shell.openExternal` [D] |
@@ -132,8 +133,8 @@ all five above were added.
 
 | Omarchy | Windows |
 |---|---|
-| `shell.appLibrary` | Start Menu `.lnk` scan (user + machine scope) through one PowerShell pass; icons extracted with `System.Drawing.Icon` into a PNG cache; launch via `explorer.exe` (ShellExecute, UAC-aware) |
-| layer-shell overlay + exclusive keyboard focus | one frameless transparent window covering the monitor under the cursor (`alwaysOnTop: screen-saver`, no taskbar entry); blur dismisses unless `keepVisibleOnFocusLoss` |
+| `shell.appLibrary` | Start Menu + Desktop `.lnk` scan (user and machine Start Menu, user and public Desktop) plus `shell:AppsFolder` rows for Store/MSIX apps — they ship no `.lnk` anywhere, which is why Notion was invisible — through one PowerShell pass; icons extracted with `System.Drawing.Icon` into a PNG cache (Store rows have no file and fall back to the generic window glyph); launch via `explorer.exe` (ShellExecute / `shell:AppsFolder\<AppID>`, UAC-aware); **open existing window**: ↵ on an app that is already running with a window switches to it instead of a second instance — exe name from the shortcut target → `Get-Process` → `MainWindowHandle` → `SW_RESTORE` if minimized → focus through the resident helper (and the launcher's own focus hand-back is dropped, so the app keeps it); only when nothing is running does the launch happen |
+| layer-shell overlay + exclusive keyboard focus | one frameless transparent window covering the monitor under the cursor (`alwaysOnTop: screen-saver`, no taskbar entry); blur dismisses unless `keepVisibleOnFocusLoss`; **on close the foreground goes back to the window that had it** — `showInactive` maps without activating so the resident focus helper can sample that window's HWND, `hide` does `SetForegroundWindow` (only while we still hold focus: on blur the clicked window already won), and the paste path waits for the hand-back so Ctrl+V lands there too |
 | `wl-copy` / `omarchy-clipboard-paste-text` | Electron clipboard; paste = hide window, then Ctrl+V via `keybd_event` |
 | `omarchy-shell osd` HUD | Windows toast (`Notification`) |
 | `omarchy-agent` hand-off | `agentCommand` template in config.json with `{prompt}` substitution, preflighted with `where.exe` (5 s cap) — the same bounded, question-free check; the fallback row explains how to enable it when unset |
@@ -149,6 +150,7 @@ Everything the Linux build accepts (`logLevel`, `keepVisibleOnFocusLoss`,
 | key | default | meaning |
 |---|---|---|
 | `hotkey` | `"Alt+Space"` | Electron accelerator for toggle |
+| `openAtLogin` | `false` | start at login: main registers the exe with `app.setLoginItemSettings` (HKCU Run) at launch and on every config change; the Settings view's **Open at Login** row and `oma-cast.ps1 install` set it (both also drop any legacy Startup-folder shortcut — one mechanism only) |
 | `fontFamily` | `""` (bundled JetBrainsMono Nerd Font stack) | UI font stack override |
 | `agentCommand` | `""` | e.g. `"wt.exe claude {prompt}"`; empty disables the hand-off |
 | `gapsOut` | `5` | card-to-screen-edge gap (Style's fallback) |
@@ -166,7 +168,14 @@ Data lives in `%LOCALAPPDATA%\oma-cast` (`db\settings.json`,
 This port was written on Linux; unit tests and a headless boot cover the
 logic, but these need a live Windows box: hotkey registration (Alt+Space
 stealing from the focused window's system menu), paste timing
-(`keybd_event` after unmap), Start Menu enumeration + icon extraction,
-multi-monitor placement under the cursor, DPI scaling (`uiZoom` × display
-scale), toasts, and UAC-gated shortcuts. `bin\oma-cast.ps1 doctor` reports
-the state; the same checklist as `tests/smoke.sh` applies.
+(`keybd_event` after unmap), Start Menu/Desktop/Store enumeration + icon
+extraction, multi-monitor placement under the cursor, DPI scaling
+(`uiZoom` × display scale), toasts, and UAC-gated shortcuts — plus, new
+in 0.2.0: **Open at Login** (the Run entry appears/disappears, no window
+pops open at login), the **focus hand-back** (close the launcher → the
+previous window takes keys again, and paste lands there), a
+Store-installed app such as Notion showing up in root search, and ↵ on an
+already-running app focusing its window (minimized included) instead of
+opening a second instance.
+`bin\oma-cast.ps1 doctor` reports the state (its `applications:` line is
+the scan count); the same checklist as `tests/smoke.sh` applies.

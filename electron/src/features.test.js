@@ -493,6 +493,133 @@ test("the window wires the services the pushed views read", () => {
   assert.ok(!apps.SCAN_SCRIPT.includes("$args"), "no trailing -Command arguments")
 })
 
+// ------------------------------------- Open at Login and the focus hand-back
+test("Open at Login: a config row wired to main's login item", () => {
+  const Schema = require("../../plugin/core/Schema.js")
+  assert.equal(Schema.configDefaults.openAtLogin, false, "off by default")
+  assert.equal(Schema.validConfigValue("openAtLogin", true), true)
+  assert.equal(Schema.validConfigValue("openAtLogin", "true"), false)
+
+  const def = SettingsView.find("setting:config:openAtLogin")
+  assert.ok(def, "settings row present")
+  assert.equal(def.scope, "config")
+  assert.equal(def.type, "bool")
+  assert.equal(SettingsView.cycle(def, undefined), true)
+  assert.equal(SettingsView.format(def, false), "Off")
+  // The hint must not steal the "hotkey" filter from the hotkey row.
+  assert.deepEqual(SettingsView.rowsFor({}, {}, "hotkey").map(r => r.id), ["setting:config:hotkey"])
+
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8")
+  assert.match(mainSrc, /setLoginItemSettings\(/, "main registers the exe with Windows")
+  assert.match(mainSrc, /applyOpenAtLogin\(\)/, "…at start and on every config change")
+})
+
+test("toggling Open at Login writes config.json and tells main", () => {
+  const { backend, paths, calls } = setup()
+  const before = calls.configChanged
+  const r = backend.callSync("rootSearch.performAction", { id: "setting:config:openAtLogin", action: "open", query: "", confirmed: true })
+  assert.equal(r.ok, true)
+  assert.equal(r.data.toast.title, "Open at Login: On")
+  const written = JSON.parse(fs.readFileSync(paths.configFile, "utf8"))
+  assert.equal(written.openAtLogin, true)
+  assert.ok(calls.configChanged > before, "main is told to register the login item")
+  backend.dispose()
+})
+
+test("an edit of config.json on disk also reaches main", async () => {
+  const { backend, paths, calls } = setup()
+  const before = calls.configChanged
+  fs.mkdirSync(paths.config, { recursive: true })
+  fs.writeFileSync(paths.configFile, JSON.stringify({ hotkey: "Ctrl+Space" }))
+  await new Promise(r => setTimeout(r, 400))
+  assert.ok(calls.configChanged > before, "the config watch tells main to re-apply hotkey + login item")
+  backend.dispose()
+})
+
+test("closing hands the foreground back to the window we took it from", () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8")
+  assert.match(mainSrc, /win\.showInactive\(\)/, "we map without activating, so the capture samples them")
+  assert.match(mainSrc, /FOCUS_HELPER_SCRIPT/, "one resident PowerShell helper answers ping/getfg/focus")
+  assert.match(mainSrc, /function hide\(afterFocus\)/, "hide waits for the hand-back before Ctrl+V")
+  // Blur: the clicked window already holds focus, so it must not be stolen back.
+  assert.match(mainSrc, /prevFh = null\n    if \(!readConfig\(\)\.keepVisibleOnFocusLoss\)/,
+    "blur clears the restore target before the dismiss")
+})
+
+test("the app library also covers Desktop and Store/MSIX apps", () => {
+  const apps = require("./apps")
+  assert.match(apps.SCAN_SCRIPT, /shell:AppsFolder/, "Store rows enumerate the AppsFolder")
+  assert.match(apps.SCAN_SCRIPT, /Get-StartApps/)
+  assert.match(apps.SCAN_SCRIPT, /GetFolderPath\('Desktop'\)/, "Desktop shortcuts count too")
+  assert.match(apps.SCAN_SCRIPT, /\$env:PUBLIC/, "…including the public Desktop")
+  assert.ok(!apps.SCAN_SCRIPT.includes("$args"), "no trailing -Command arguments")
+  assert.equal(apps.launchArg("C:\\links\\Notion.lnk"), "C:\\links\\Notion.lnk")
+  assert.equal(apps.launchArg("uwp:Notion_abc123!App"), "shell:AppsFolder\\Notion_abc123!App")
+})
+
+// ------------------------------------------------------- take me there
+test("opening an app switches to its existing window instead of a second instance", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "oma-cast-switch-"))
+  const paths = {
+    home: root, config: path.join(root, "config"), configFile: path.join(root, "config", "config.json"),
+    scriptCommands: "", data: path.join(root, "data"), db: path.join(root, "data", "db"),
+    extensions: "", extensionSupport: "", clipboard: "", notesAttachments: "",
+    cache: path.join(root, "cache"), state: path.join(root, "state"), logs: "", backups: "", runtime: ""
+  }
+  const notionId = "C:\\links\\Notion.lnk"
+  const uwpId = "uwp:Notion_abc!App"
+  const apps = {
+    entries: [
+      { id: notionId, name: "Notion", icon: "", target: "C:\\Users\\x\\AppData\\Local\\Programs\\Notion\\Notion.exe", keywords: [] },
+      { id: uwpId, name: "Notion Store", icon: "", target: "", keywords: [] }
+    ],
+    loading: false, launched: [], focusRequested: null,
+    on() {}, refresh() { return Promise.resolve(this.entries) },
+    launch(id) { this.launched.push(id) }, iconSource() { return Promise.resolve("") }
+  }
+  const host = { focusAppWindow: (name, cb) => { apps.focusRequested = name; cb(host.taken) }, taken: true }
+  const backend = createBackend({ paths, host, apps }).start()
+
+  // An instance with a window wins: looked up by the shortcut target's
+  // exe name, never launched again.
+  const r = backend.callSync("rootSearch.performAction", { id: "app:" + notionId, action: "open", query: "", confirmed: true })
+  assert.equal(r.ok, true)
+  assert.equal(r.data.close, true)
+  assert.equal(apps.focusRequested, "Notion", "asked main for the running process")
+  assert.deepEqual(apps.launched, [], "the existing window wins")
+
+  // Nothing running (or no window) → the normal launch.
+  host.taken = false
+  backend.callSync("rootSearch.performAction", { id: "app:" + notionId, action: "open", query: "", confirmed: true })
+  assert.deepEqual(apps.launched, [notionId])
+
+  // Store rows carry no .exe target: they never ask — activating the
+  // AppsFolder ID brings up the running instance on its own.
+  host.taken = true
+  apps.focusRequested = null
+  backend.callSync("rootSearch.performAction", { id: "app:" + uwpId, action: "open", query: "", confirmed: true })
+  assert.equal(apps.focusRequested, null, "no exe to look up")
+  assert.deepEqual(apps.launched, [notionId, uwpId])
+
+  backend.dispose()
+})
+
+test("the switch routes through main and suppresses the close hand-back", () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8")
+  const at = mainSrc.indexOf('ipcMain.on("host-focus-app"')
+  assert.ok(at >= 0, "main owns the request")
+  const handler = mainSrc.slice(at)
+  // The close arrives right after the switch request: without this the
+  // hand-back would steal focus back from the app we just switched to.
+  assert.match(handler, /prevFh = null/, "the close that follows hands nothing back")
+  assert.match(handler, /focusHelperAsk\("app "/, "the warm helper does the lookup")
+  assert.match(mainSrc, /IsIconic\(IntPtr/, "a minimized window is restored before focusing")
+  assert.match(mainSrc, /\^app \.[+]/, "the helper understands the app command")
+  const hostSrc = fs.readFileSync(path.join(__dirname, "..", "src", "host.js"), "utf8")
+  assert.match(hostSrc, /focusAppWindow/, "the renderer adapter exists")
+  assert.match(hostSrc, /2500/, "…and answers false rather than swallowing a launch")
+})
+
 test("Kill Process: the snapshot drops the launcher's own processes", async () => {
   const { createProcesses, LIST_SCRIPT } = require("./processes")
   const rows = [

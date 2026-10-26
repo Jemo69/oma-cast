@@ -7,7 +7,7 @@
 #   oma-cast call <method> [json]       # e.g. oma-cast call system.info
 #   oma-cast start                      # launch the app if it isn't running
 #   oma-cast doctor                     # environment and configuration check
-#   oma-cast install                    # PATH shim + Startup shortcut
+#   oma-cast install                    # PATH shim + Open at Login
 param(
   [Parameter(Position = 0)] [string]$Command = "help",
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)] $Rest
@@ -62,18 +62,29 @@ function Install-OmaCast {
   Copy-Item (Join-Path $PSScriptRoot "oma-cast.ps1") (Join-Path $shimDir "oma-cast.ps1") -Force
   Copy-Item (Join-Path $PSScriptRoot "oma-cast.cmd") (Join-Path $shimDir "oma-cast.cmd") -Force
 
-  # Autostart: a Startup-folder shortcut that runs the launcher hidden.
+  # Autostart: one mechanism — config.json's openAtLogin, the same key the
+  # Settings view's "Open at Login" row writes. The running app turns it
+  # into the HKCU Run entry through its config watch; if nothing is
+  # running, the next start does (the message below says so). Also removes
+  # the Startup-folder shortcut older installs created: two entries
+  # racing at login ends with the second one toggling the window open. [D]
   $startup = [Environment]::GetFolderPath("Startup")
-  $shortcutPath = Join-Path $startup "oma-cast.lnk"
-  $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut($shortcutPath)
-  $shortcut.TargetPath = "powershell.exe"
-  $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $shimDir 'oma-cast.ps1')`" start"
-  $shortcut.WindowStyle = 7
-  $shortcut.Save()
+  $legacy = Join-Path $startup "oma-cast.lnk"
+  if (Test-Path $legacy) { Remove-Item $legacy -Force }
 
-  Write-Output "installed: $shimDir (add it to PATH), autostart: $shortcutPath"
-  if (-not (Test-Running)) { Write-Output "run 'oma-cast start' (or log in again) to launch it" }
+  $cfgDir = Join-Path $env:APPDATA "oma-cast"
+  $cfgFile = Join-Path $cfgDir "config.json"
+  if (-not (Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
+  $cfg = $null
+  if (Test-Path $cfgFile) { try { $cfg = Get-Content $cfgFile -Raw | ConvertFrom-Json } catch { $cfg = $null } }
+  if (-not $cfg) { $cfg = [PSCustomObject]@{} }
+  if ($cfg.PSObject.Properties.Name -contains "openAtLogin") { $cfg.openAtLogin = $true }
+  else { $cfg | Add-Member -NotePropertyName openAtLogin -NotePropertyValue $true }
+  # No BOM: the app's JSON.parse rejects a UTF-8 BOM. [D]
+  [System.IO.File]::WriteAllText($cfgFile, ($cfg | ConvertTo-Json -Depth 10))
+
+  Write-Output "installed: $shimDir (add it to PATH), open at login: $cfgFile"
+  if (-not (Test-Running)) { Write-Output "not running yet - 'oma-cast start' once to register the login item" }
 }
 
 function Invoke-Doctor {
@@ -93,7 +104,7 @@ function Invoke-Doctor {
   Write-Output "running:     $(if ($running) { 'yes' } else { 'no - run: oma-cast start' })"
   if ($running) {
     $info = Invoke-Request @{ method = "call"; data = @{ method = "system.info"; data = $null } }
-    Write-Output "version:     $($info.version) on $($info.desktop), $($info.candidates) candidates, ready=$($info.ready)"
+    Write-Output "version:     $($info.version) on $($info.desktop), $($info.candidates) candidates, $($info.applications) applications, ready=$($info.ready)"
   }
   exit 0
 }

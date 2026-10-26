@@ -49,6 +49,7 @@ test("system.info reports the windows desktop and the method surface", () => {
   assert.equal(r.ok, true)
   assert.equal(r.data.desktop, "windows")
   assert.equal(r.data.appLibrary, true)
+  assert.equal(r.data.applications, 2, "the fixture's two Start Menu entries")
   assert.ok(r.data.methods.indexOf("rootSearch.search") >= 0)
   assert.ok(r.data.methods.indexOf("calculator.calculate") >= 0)
   backend.dispose()

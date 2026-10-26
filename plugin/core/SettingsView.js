@@ -25,6 +25,8 @@ var DEFS = [
     type: "enum", dynamic: "themes", choices: ["tokyo-night"], slug: true },
   { scope: "config", key: "hotkey", label: "Global Hotkey", hint: "Electron accelerator; applied immediately",
     type: "enum", choices: ["Alt+Space", "Alt+K", "Alt+F", "Ctrl+Space", "Ctrl+Alt+Space", "Alt+Q"] },
+  { scope: "config", key: "openAtLogin", label: "Open at Login", hint: "Launch the launcher when you sign in (starts hidden in the background)",
+    type: "bool" },
   { scope: "config", key: "keepVisibleOnFocusLoss", label: "Keep Visible on Focus Loss", hint: "Off: clicking away or blurring dismisses the launcher",
     type: "bool" },
   { scope: "config", key: "currencyRates", label: "Currency Rates", hint: "Daily ECB rates from frankfurter.dev — the only network request",

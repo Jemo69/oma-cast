@@ -24,6 +24,16 @@ test("host.power: sleep invokes PowerShell SetSuspendState to force true sleep",
   }
 })
 
+test("host.focusAppWindow: without a renderer bridge it answers false", async () => {
+  // Plain node has no ipcRenderer: the send throws, settle(false) runs
+  // once, and the 2.5 s safety timer is cleared — the launch fallback
+  // still happens and the process can exit.
+  const results = []
+  host.focusAppWindow("Notion", taken => results.push(taken))
+  await new Promise(r => setTimeout(r, 10))
+  assert.deepEqual(results, [false])
+})
+
 test("host.power: shutdown and restart invoke shutdown.exe", () => {
   const spawned = []
   const orig = childProcess.spawn
