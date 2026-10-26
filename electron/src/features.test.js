@@ -569,10 +569,12 @@ test("opening an app switches to its existing window instead of a second instanc
   }
   const notionId = "C:\\links\\Notion.lnk"
   const uwpId = "uwp:Notion_abc!App"
+  const wrapperId = "C:\\links\\Tools.lnk"
   const apps = {
     entries: [
       { id: notionId, name: "Notion", icon: "", target: "C:\\Users\\x\\AppData\\Local\\Programs\\Notion\\Notion.exe", keywords: [] },
-      { id: uwpId, name: "Notion Store", icon: "", target: "", keywords: [] }
+      { id: uwpId, name: "Notion Store", icon: "", target: "", keywords: [] },
+      { id: wrapperId, name: "Tools", icon: "", target: "C:\\Windows\\System32\\cmd.exe", keywords: [] }
     ],
     loading: false, launched: [], focusRequested: null,
     on() {}, refresh() { return Promise.resolve(this.entries) },
@@ -594,13 +596,25 @@ test("opening an app switches to its existing window instead of a second instanc
   backend.callSync("rootSearch.performAction", { id: "app:" + notionId, action: "open", query: "", confirmed: true })
   assert.deepEqual(apps.launched, [notionId])
 
-  // Store rows carry no .exe target: they never ask — activating the
-  // AppsFolder ID brings up the running instance on its own.
+  // Store rows carry no path: the package family prefix is the guess at
+  // the process name — taken → switch with no launch; the not-running
+  // half falls through to the normal AppsFolder launch.
   host.taken = true
   apps.focusRequested = null
   backend.callSync("rootSearch.performAction", { id: "app:" + uwpId, action: "open", query: "", confirmed: true })
-  assert.equal(apps.focusRequested, null, "no exe to look up")
-  assert.deepEqual(apps.launched, [notionId, uwpId])
+  assert.equal(apps.focusRequested, "Notion", "asked with the family prefix")
+  assert.deepEqual(apps.launched, [notionId], "a running Store app switches, not launches")
+
+  host.taken = false
+  backend.callSync("rootSearch.performAction", { id: "app:" + uwpId, action: "open", query: "", confirmed: true })
+  assert.deepEqual(apps.launched, [notionId, uwpId], "…and not running, it launches")
+
+  // Wrapper shortcuts (target = cmd/explorer, the real app lives in the
+  // arguments we do not parse) never ask: they would "find" the desktop.
+  apps.focusRequested = null
+  backend.callSync("rootSearch.performAction", { id: "app:" + wrapperId, action: "open", query: "", confirmed: true })
+  assert.equal(apps.focusRequested, null, "wrapper targets are not switch candidates")
+  assert.deepEqual(apps.launched, [notionId, uwpId, wrapperId])
 
   backend.dispose()
 })
@@ -614,6 +628,7 @@ test("the switch routes through main and suppresses the close hand-back", () => 
   // hand-back would steal focus back from the app we just switched to.
   assert.match(handler, /prevFh = null/, "the close that follows hands nothing back")
   assert.match(handler, /focusHelperAsk\("app "/, "the warm helper does the lookup")
+  assert.match(handler, /app switch answer/, "the decision lands in main.log for live diagnosis")
   assert.match(mainSrc, /IsIconic\(IntPtr/, "a minimized window is restored before focusing")
   assert.match(mainSrc, /\^app \.[+]/, "the helper understands the app command")
   const hostSrc = fs.readFileSync(path.join(__dirname, "..", "src", "host.js"), "utf8")

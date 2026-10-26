@@ -428,9 +428,15 @@ ipcMain.on("host-focus-app", function(e, req) {
   var id = req ? req.id : null
   var reply = function(taken) { send("focus-app-result", { id: id, taken: !!taken }) }
   prevFh = null
-  var name = String(req && req.name || "")
-  if (!/^[A-Za-z0-9 ._+-]+$/.test(name)) return reply(false)
-  focusHelperAsk("app " + name, 1500, function(line) {
+  // Sanitised, not whitelisted: every exe name is legal — only the line
+  // breaks that would break the helper's stdin protocol are not. The old
+  // [A-Za-z0-9 ._+-] whitelist silently answered "launch" for names with
+  // e.g. parentheses. [D]
+  var name = String(req && req.name || "").replace(/[\r\n]/g, "").trim().slice(0, 120)
+  if (!name) { logLine("app switch: request without an exe name"); return reply(false) }
+  logLine("app switch: " + name)
+  focusHelperAsk("app " + name, 2000, function(line) {
+    logLine("app switch answer: " + name + " → " + (line || "no answer (helper cold or dead)"))
     reply(!!line && line.indexOf("ok") === 0)
   })
 })

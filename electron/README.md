@@ -133,7 +133,7 @@ all five above were added.
 
 | Omarchy | Windows |
 |---|---|
-| `shell.appLibrary` | Start Menu + Desktop `.lnk` scan (user and machine Start Menu, user and public Desktop) plus `shell:AppsFolder` rows for Store/MSIX apps — they ship no `.lnk` anywhere, which is why Notion was invisible — through one PowerShell pass; icons extracted with `System.Drawing.Icon` into a PNG cache (Store rows have no file and fall back to the generic window glyph); launch via `explorer.exe` (ShellExecute / `shell:AppsFolder\<AppID>`, UAC-aware); **open existing window**: ↵ on an app that is already running with a window switches to it instead of a second instance — exe name from the shortcut target → `Get-Process` → `MainWindowHandle` → `SW_RESTORE` if minimized → focus through the resident helper (and the launcher's own focus hand-back is dropped, so the app keeps it); only when nothing is running does the launch happen |
+| `shell.appLibrary` | Start Menu + Desktop `.lnk` scan (user and machine Start Menu, user and public Desktop) plus `shell:AppsFolder` rows for Store/MSIX apps — they ship no `.lnk` anywhere, which is why Notion was invisible — through one PowerShell pass; icons extracted with `System.Drawing.Icon` into a PNG cache (Store rows have no file and fall back to the generic window glyph); launch via `explorer.exe` (ShellExecute / `shell:AppsFolder\<AppID>`, UAC-aware); **open existing window**: ↵ on an app that is already running with a window switches to it instead of a second instance — exe name from the shortcut target → `Get-Process` → `MainWindowHandle` → `SW_RESTORE` if minimized → focus through the resident helper (and the launcher's own focus hand-back is dropped, so the app keeps it); only when nothing is running does the launch happen (Store rows guess the process from the package family prefix, wrapper shortcuts with explorer/cmd targets never ask), and every attempt is logged as `app switch:` in `main.log` |
 | layer-shell overlay + exclusive keyboard focus | one frameless transparent window covering the monitor under the cursor (`alwaysOnTop: screen-saver`, no taskbar entry); blur dismisses unless `keepVisibleOnFocusLoss`; **on close the foreground goes back to the window that had it** — `showInactive` maps without activating so the resident focus helper can sample that window's HWND, `hide` does `SetForegroundWindow` (only while we still hold focus: on blur the clicked window already won), and the paste path waits for the hand-back so Ctrl+V lands there too |
 | `wl-copy` / `omarchy-clipboard-paste-text` | Electron clipboard; paste = hide window, then Ctrl+V via `keybd_event` |
 | `omarchy-shell osd` HUD | Windows toast (`Notification`) |
@@ -176,6 +176,7 @@ pops open at login), the **focus hand-back** (close the launcher → the
 previous window takes keys again, and paste lands there), a
 Store-installed app such as Notion showing up in root search, and ↵ on an
 already-running app focusing its window (minimized included) instead of
-opening a second instance.
+opening a second instance — when it doesn't, the `app switch:` lines in
+`main.log` show the lookup's answer (`ok 1`, `none` or `no answer`).
 `bin\oma-cast.ps1 doctor` reports the state (its `applications:` line is
 the scan count); the same checklist as `tests/smoke.sh` applies.

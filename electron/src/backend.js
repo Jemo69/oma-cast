@@ -407,28 +407,41 @@ function createBackend(opts) {
   // ↵ on an app: if that program already has a window, take the user
   // there instead of spawning a second instance — main asks the focus
   // helper (process → hwnd → restore + focus) and answers async; only
-  // "not running" (or no bridge) falls back to the launch. Rows without
-  // a .exe target (Store/MSIX) never ask: activating their AppsID brings
-  // up the existing instance on its own. [D]
+  // "not running" (or no bridge) falls back to the launch. The exe name
+  // comes from the shortcut target, or — for Store/MSIX rows, which carry
+  // no path — from the package family prefix (Notion_…!App → Notion); a
+  // wrong guess just answers none and launches as before. Wrapper
+  // shortcuts (explorer/cmd targets with the real app in their arguments,
+  // which we do not parse) never ask: they would "find" the desktop. The
+  // whole decision is logged so a live machine can show which way it went. [D]
+  var WRAPPER_EXES = { explorer: 1, cmd: 1, powershell: 1, pwsh: 1, wscript: 1, cscript: 1, mshta: 1, rundll32: 1 }
   function launchApp(candidate) {
+    var appId = String(candidate.appId || "")
     var exe = ""
     if (apps) {
       var list = apps.entries || []
       for (var i = 0; i < list.length; i++) {
         var e = list[i]
-        if (e && e.id === candidate.appId && e.target && /\.exe$/i.test(String(e.target))) {
+        if (!e || e.id !== appId) continue
+        if (e.target && /\.exe$/i.test(String(e.target))) {
           exe = String(e.target).replace(/\\/g, "/").split("/").pop().replace(/\.exe$/i, "")
-          break
+          if (WRAPPER_EXES[exe.toLowerCase()]) exe = ""
+        } else if (appId.indexOf("uwp:") === 0) {
+          exe = appId.slice(4).split("_")[0]
         }
+        break
       }
     }
     if (exe && host.focusAppWindow) {
+      log("info", "app", "switch requested", { appId: appId, exe: exe })
       host.focusAppWindow(exe, function(taken) {
-        if (!taken && apps) apps.launch(candidate.appId)
+        log("info", "app", taken ? "switched to the open window" : "no window found — launching", { exe: exe })
+        if (!taken && apps) apps.launch(appId)
       })
       return
     }
-    if (apps) apps.launch(candidate.appId)
+    log("info", "app", "direct launch", { appId: appId, exe: exe || null })
+    if (apps) apps.launch(appId)
   }
 
   function performAction(data) {
