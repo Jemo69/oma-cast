@@ -542,7 +542,8 @@ test("closing hands the foreground back to the window we took it from", () => {
   assert.match(mainSrc, /FOCUS_HELPER_SCRIPT/, "one resident PowerShell helper answers ping/getfg/focus")
   assert.match(mainSrc, /function hide\(afterFocus\)/, "hide waits for the hand-back before Ctrl+V")
   // Blur: the clicked window already holds focus, so it must not be stolen back.
-  assert.match(mainSrc, /prevFh = null\n    if \(!readConfig\(\)\.keepVisibleOnFocusLoss\)/,
+  // (\r?\n: Windows runners check the repo out with CRLF.)
+  assert.match(mainSrc, /prevFh = null\r?\n    if \(!readConfig\(\)\.keepVisibleOnFocusLoss\)/,
     "blur clears the restore target before the dismiss")
 })
 
