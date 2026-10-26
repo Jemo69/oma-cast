@@ -685,22 +685,17 @@ Each running menu-bar command owns one SNI item (ksni):
 - **Page navigation:** square brackets (default) or arrow keys.
 - Full table: ref 04 §2.8.
 
-### 10.4 Theming [O, port exactly]
-- **Theme JSON** (15 fields): `{id, name, appearance: light|dark, background, backgroundSecondary, foreground, accent, selection, loader, red, orange, yellow, green, blue, purple, magenta}`.
-- **Bundled themes:** Raycast Dark/Light, Sky, Sunset, Midnight, Dawn, Overcast, Noon. Exact hex values are in ref 04 §4.1. Theme values are data, so reusing these colour values is fine, but rename the themes.
-- **CSS variables:**
-  - Raw: `--bg --bg-secondary --fg --accent --selection --loader --red…--magenta`.
-  - Alpha ramps for each: `-0 -5 -10 -20 -40 -60 -80`, using `rgb(from var(--x) r g b / N%)` (WebKitGTK ≥ 2.44; otherwise precompute them in JS).
-  - Semantic tokens: `--color-text-primary: var(--fg)`, `-secondary: fg-60`, `-tertiary: fg-40`, `--color-border-separator: fg-10`, `--color-surface-list-selection: fg-10`, `--color-surface-list-hover: fg-5`, `--color-window-bg: bg-40`, brand `#ff6363`. Full list in ref 04 §4.2.
+### 10.4 Theming [D, supersedes original Tauri plan; see docs/THEME_SPEC.md]
+- **Canonical specification:** See [`docs/THEME_SPEC.md`](docs/THEME_SPEC.md) for full token formulas, schemas, and lifecycle.
+- **Omarchy / Linux:** Bound live to `qs.Commons.Color.menu.*` and `qs.Commons.Style.*` in QML; restyles instantaneously on `omarchy theme set` without daemon restarts or parsing.
+- **Windows / Electron:** Pure JS port of Omarchy's template and theme resolver (`src/theme/color.js`, `render.js`, `surface.js`, `themes.js`). Discovers bundled (`electron/themes/`) and user (`%APPDATA%\oma-cast\themes/`) themes, compiles `colors.toml` against `shell.toml.tpl`, and updates CSS variables dynamically on `settings.configChanged`.
+- **Theme JSON (superseded reference):** The original 15-field Raycast theme model (ref 04 §4.1) is kept for reference only; the live Omarchy tokens supersede it (§2.0).
 - **Design tokens:**
-  - `--spx = 1px × uiZoom`
-  - type scale 11/13/16/18/24, base 13
-  - spacing 2/4/6/8/12/16/24/32
-  - radius 4/6/8/10/12
-  - easing `cubic-bezier(.16,1,.3,1)`
-  - fonts: **Inter** (variable, features `ss03`) and **JetBrains Mono**, both OFL, so bundle them
-- Follow the system light/dark via the portal `org.freedesktop.appearance color-scheme`. Settings: `appearance: system|light|dark`, `themeLightId`, `themeDarkId`.
-- **Theme Studio:** a separate window with an installed-themes list, an editor for primary and support colours (hex + HSL sliders), live mock-launcher preview, duplicate/delete/save, set as light/dark, and copy as JSON. Install from a deep link `<app>://theme?…` (match the ray.so URL params [I]).
+  - Spatial scaling: `Style.space(v) = Math.round(v * spacingScale * (scaleWithFont ? fontBaseSize / 12 : 1))`; UI zoom: `px(v) = Math.round(Style.space(v) * uiZoom)`.
+  - Type scale: `caption` (0.833), `bodySmall` (0.917), `body` (1.0), `subtitle` (1.083), `title` (1.167), `heading` (1.333), `display` (2.0) on base 12.
+  - Border geometry: `Border.surfaceSpec` with solid CSS or multi-stop Hyprland active border gradient.
+  - Fonts: `omarchy.ttf` (app glyphs) and `JetBrainsMono Nerd Font` (monospace glyphs & symbols).
+- **Settings:** Cycled directly from the Settings view under **Theme** (`setting:config:theme`).
 
 ### 10.5 Settings window [O]
 - Normal decorated window with a sidebar (searchable) and content.
