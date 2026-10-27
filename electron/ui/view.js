@@ -35,16 +35,11 @@ function nextSelectable(from, direction) {
   return -1
 }
 
-// Accessories width, measured once: the middle row insets by it (the QML
-// anchors middle.right to accessories.left).
+// (Was accessoryWidth: the middle column used to inset by a JS-measured
+// accessories width — one forced layout per row per keystroke. Rows are
+// flex now, so the browser does it in one layout pass; kept for reference.)
 function accessoryWidth(row) {
-  var L = look()
-  var w = 0
-  if (row.alias) w += measure(row.alias, "10px " + L.fontFamily) + px(12) + 2 + px(10)
-  if (row.favorite) w += measure(GLYPH_FAV, "10px " + L.fontFamily) + px(10)
-  if (row.checked) w += measure("✓", "12px " + L.fontFamily) + px(10)
-  w += measure(row.typeLabel, "11px " + L.fontFamily)
-  return w
+  return 0
 }
 
 function itemRowEl(row, index) {
@@ -82,8 +77,6 @@ function itemRowEl(row, index) {
 
   var middle = document.createElement("div")
   middle.className = "middle"
-  middle.style.left = (px(12) + px(22) + px(10)) + "px"
-  middle.style.right = (px(12) + px(10) + accessoryWidth(row) + px(10)) + "px"
   var title = document.createElement("span")
   title.className = "title"
   title.textContent = row.title

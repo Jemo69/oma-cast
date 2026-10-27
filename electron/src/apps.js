@@ -117,6 +117,41 @@ function createApps(opts) {
   }
   apps.on = function(event, cb) { apps._listeners[event].push(cb) }
   function emit() { (apps._listeners.changed || []).forEach(function(cb) { cb() }) }
+  // Throttle the Start Menu scan: backend.visibility() fires on every
+  // show, and each scan spawns PowerShell + rebuilds while the user is
+  // already typing. Re-scan at most every 30 s (or when empty); the
+  // window paints from cache first. [D]
+  var lastScanAt = 0
+  var SCAN_THROTTLE_MS = 30000
+  // Icon extractions spawn PowerShell per uncached .lnk: cap concurrency
+  // so the first show (100+ app rows) doesn't fork 100 processes at once
+  // and starve the renderer. Extra rows queue. [D]
+  var iconQueue = []
+  var iconRunning = 0
+  var ICON_CONCURRENCY = 4
+  apps._pendingIcons = {}
+  function pumpIcons() {
+    while (iconRunning < ICON_CONCURRENCY && iconQueue.length > 0) {
+      var job = iconQueue.shift()
+      iconRunning++
+      runIconExtraction(job)
+    }
+  }
+  function runIconExtraction(job) {
+    var script = ICON_SCRIPT.replace("{{src}}", psQuote(job.linkPath)).replace("{{out}}", psQuote(job.png))
+    try { fs.mkdirSync(apps.iconDir, { recursive: true }) } catch (e) {}
+    childProcess.execFile("powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { timeout: 15000, windowsHide: true },
+      function(err) {
+        iconRunning--
+        var url = (!err && fs.existsSync(job.png)) ? fileUrl(job.png) : ""
+        apps._icons[job.linkPath] = url
+        delete apps._pendingIcons[job.linkPath]
+        job.resolve(url)
+        pumpIcons()
+      })
+  }
 
   function runPowerShell(script, timeoutMs) {
     return new Promise(function(resolve) {
@@ -129,8 +164,9 @@ function createApps(opts) {
 
   // One enumeration pass; user-scope links win over machine-scope on name
   // collisions (Windows resolves the same way for Start Menu entries).
-  apps.refresh = function() {
+  apps.refresh = function(force) {
     if (apps.loading) return Promise.resolve(apps.entries)
+    if (!force && apps.entries.length > 0 && Date.now() - lastScanAt < SCAN_THROTTLE_MS) return Promise.resolve(apps.entries)
     apps.loading = true
     return runPowerShell(SCAN_SCRIPT).then(function(res) {
       apps.loading = false
@@ -170,6 +206,7 @@ function createApps(opts) {
       }
       out.sort(function(a, b) { return a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) })
       apps.entries = out
+      lastScanAt = Date.now()
       emit()
       return out
     }, function() { apps.loading = false; return apps.entries })
@@ -191,18 +228,15 @@ function createApps(opts) {
       apps._icons[linkPath] = fileUrl(png)
       return Promise.resolve(apps._icons[linkPath])
     }
-    return new Promise(function(resolve) {
-      var script = ICON_SCRIPT.replace("{{src}}", psQuote(linkPath)).replace("{{out}}", psQuote(png))
-      try { fs.mkdirSync(apps.iconDir, { recursive: true }) } catch (e) {}
-      childProcess.execFile("powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-        { timeout: 15000, windowsHide: true },
-        function(err) {
-          var url = (!err && fs.existsSync(png)) ? fileUrl(png) : ""
-          apps._icons[linkPath] = url
-          resolve(url)
-        })
+    // Coalesce: one extraction per path even when every rebuild re-asks
+    // while the first is still in flight (per-keystroke rebuilds did). [D]
+    if (apps._pendingIcons[linkPath]) return apps._pendingIcons[linkPath]
+    var pending = new Promise(function(resolve) {
+      iconQueue.push({ linkPath: linkPath, png: png, resolve: resolve })
+      pumpIcons()
     })
+    apps._pendingIcons[linkPath] = pending
+    return pending
   }
 
   // Launch through the shell (ShellExecute on the .lnk): UAC-aware, runs

@@ -60,11 +60,38 @@ function rebuild(resetSelection) {
   select(keepIndex >= 0 ? keepIndex : nextSelectable(-1, 1))
 }
 
+// Typing coalescing: a keydown used to run the full search + list render
+// synchronously before returning, so fast typing queued whole searches and
+// characters arrived a word at a time. Now setQuery paints the query text
+// and caret immediately (cheap) and schedules the heavy search for the next
+// task; rapid keys collapse into one rebuild. Enter/actions flush first so
+// they always act on the latest query. [D]
+var rebuildTimer = null
+var pendingReset = false
+function scheduleRebuild(resetSelection) {
+  if (resetSelection) pendingReset = true
+  if (rebuildTimer) return
+  rebuildTimer = setTimeout(function() {
+    rebuildTimer = null
+    var r = pendingReset
+    pendingReset = false
+    rebuild(r)
+  }, 0)
+}
+function flushRebuild() {
+  if (!rebuildTimer) return
+  clearTimeout(rebuildTimer)
+  rebuildTimer = null
+  var r = pendingReset
+  pendingReset = false
+  rebuild(r)
+}
 function setQuery(next) {
   if (W.query === next) return
   W.query = next
   W.historyIndex = -1
-  rebuild(true)
+  try { renderHeader() } catch (e) {}
+  scheduleRebuild(true)
 }
 
 // --------------------------------------------------------------- actions
@@ -75,6 +102,7 @@ function actionsForSelected() {
 }
 
 function perform(actionId, index) {
+  flushRebuild()
   if (index !== undefined && index >= 0) select(index)
   if (!W.selectedRow) return
   W.actionPanelOpen = false
@@ -111,17 +139,20 @@ function confirmAlert() {
 }
 
 function performNth(n) {
+  flushRebuild()
   var list = actionsForSelected()
   if (list.length > n) perform(list[n].id)
 }
 
 function performIfOffered(actionIds) {
+  flushRebuild()
   var list = actionsForSelected()
   for (var i = 0; i < list.length; i++) if (actionIds.indexOf(list[i].id) >= 0) { perform(list[i].id); return true }
   return false
 }
 
 function toggleActionPanel() {
+  flushRebuild()
   if (W.actionPanelOpen) { W.actionPanelOpen = false; renderPanels(); renderHeader(); return }
   W.actions = actionsForSelected()
   actionPanelState.filter = ""
@@ -155,6 +186,7 @@ function setRootFilter(id) {
 }
 
 function toggleAbout() {
+  flushRebuild()
   if (W.aboutOpen || !W.selectedRow) { W.aboutOpen = false; renderPanels(); return }
   var r = backend.callSync("rootSearch.getItemInfo", { id: W.selectedRow.itemId, query: W.query })
   if (!r.ok) { showToast("failure", r.error); return }
@@ -219,7 +251,8 @@ function recallHistory(directionStep) {
   var next = Math.max(-1, Math.min(history.length - 1, W.historyIndex + directionStep))
   if (next === W.historyIndex) return true
   W.query = next < 0 ? "" : history[next]
-  rebuild(true)
+  try { renderHeader() } catch (e) {}
+  scheduleRebuild(true)
   W.historyIndex = next
   return true
 }
@@ -440,6 +473,7 @@ el.alert.addEventListener("mousedown", function(e) {
 // ----------------------------------------------------------- show/hide
 function prepare() {
   if (popTimer) { clearTimeout(popTimer); popTimer = null }
+  if (rebuildTimer) { clearTimeout(rebuildTimer); rebuildTimer = null; pendingReset = false }
   W.historyIndex = -1
   closePopups()
   rebuild(true)
@@ -448,7 +482,11 @@ function prepare() {
 host.onVisibility(function(visible) {
   // The backend's own show handler (QML's Connections block): refresh
   // exchange rates, re-scan the Start Menu, re-walk files when stale.
-  backend.visibility(visible)
+  // Deferred past the first paint: those spawns + walks used to contend
+  // with the first keystrokes, so typing started ~a second late. The
+  // window paints from cache first, refreshes land in the background. [D]
+  if (visible) setTimeout(function() { if (W.shown) backend.visibility(visible) }, 250)
+  else backend.visibility(visible)
   if (!W.shown && visible) {
     W.shown = true
     prepare()
@@ -500,6 +538,9 @@ setInterval(function() {
   lastRev.store = backend.storeRevision
   if (storeChanged) refreshGeneral()
   if (!W.shown) return
+  // A scheduled keystroke rebuild already covers these revisions; running
+  // a second synchronous rebuild here doubled the per-keystroke cost. [D]
+  if (rebuildTimer) return
   if (candChanged && !W.actionPanelOpen && !W.alert) rebuild(false)
   else if (calcChanged && !W.actionPanelOpen && W.query) rebuild(false)
   el.loader.classList.toggle("visible", backend.loading)

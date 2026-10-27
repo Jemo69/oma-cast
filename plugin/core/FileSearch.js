@@ -14,10 +14,13 @@ function isHidden(name) {
 // Case-insensitive subsequence: every char of `needle` appears in `hay`
 // in order. Returns 0 for no match, otherwise a quality score in (0, 1]
 // that rewards contiguous and early matches. Cheap enough for 100k rows.
-function subsequence(needle, hay) {
-  if (!needle) return 1
+// The L variants take already-lowered strings so match() can lower each
+// entry once per query (or reuse the index's cached nl/pl) instead of
+// once per token — the per-keystroke cost that made typing arrive a word
+// at a time. [D]
+function subsequenceL(n, h) {
+  if (!n) return 1
   var i = 0, qi = 0, score = 0, streak = 0, first = -1
-  var n = needle.toLowerCase(), h = String(hay || "").toLowerCase()
   if (n.length > h.length) return 0
   for (; qi < n.length; qi++) {
     var ch = n.charAt(qi)
@@ -33,11 +36,13 @@ function subsequence(needle, hay) {
   return score / (n.length + 2)
 }
 
+function subsequence(needle, hay) {
+  return subsequenceL(String(needle || "").toLowerCase(), String(hay || "").toLowerCase())
+}
+
 // Quality of one token against a single string: exact > prefix > word >
 // substring > subsequence.
-function tokenScore(token, text) {
-  var t = String(token || "").toLowerCase()
-  var s = String(text || "").toLowerCase()
+function tokenScoreL(t, s) {
   if (!t) return 1
   if (s === t) return 100
   if (s.indexOf(t) === 0) return 80
@@ -46,8 +51,12 @@ function tokenScore(token, text) {
     if (before === " " || before === "-" || before === "_" || before === "." || before === "/") return 70
     return 60
   }
-  var sub = subsequence(t, s)
+  var sub = subsequenceL(t, s)
   return sub > 0 ? 30 + sub * 20 : 0
+}
+
+function tokenScore(token, text) {
+  return tokenScoreL(String(token || "").toLowerCase(), String(text || "").toLowerCase())
 }
 
 // Order per SPEC: all-token name matches first, then name+path mixes, then
@@ -68,15 +77,20 @@ function match(entries, query, opts) {
   var out = []
   for (var e = 0; e < entries.length; e++) {
     var entry = entries[e]
+    // Lower once per entry per query (the file-index caches nl/pl, so
+    // this is usually free) instead of once per token per entry.
+    var nl = entry.nl !== undefined ? entry.nl : String(entry.n || "").toLowerCase()
+    var pl = null
+    if (!nameOnly) pl = entry.pl !== undefined ? entry.pl : String(entry.p || "").toLowerCase()
     var quality = 0
     var allInName = true
     var ok = true
     for (var t = 0; t < tokens.length; t++) {
-      var nameScore = tokenScore(tokens[t], entry.n)
+      var nameScore = tokenScoreL(tokens[t], nl)
       if (nameScore > 0) { quality += nameScore; continue }
       if (nameOnly) { ok = false; break }
       allInName = false
-      var pathScore = tokenScore(tokens[t], entry.p)
+      var pathScore = tokenScoreL(tokens[t], pl)
       if (pathScore > 0) { quality += pathScore * 0.5; continue }
       ok = false
       break

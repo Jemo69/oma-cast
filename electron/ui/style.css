@@ -183,15 +183,21 @@ html, body {
 
 .row {
   position: relative;
+  /* Flex instead of absolute-positioned columns: the old middle/accessories
+     anchors cost one forced layout per row per keystroke (accessoryWidth).
+     Flex resolves the same 12/22/10 rhythm in a single pass. [D] */
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 12px;
   border-radius: var(--radius-6);
   background: transparent;
   cursor: pointer;
 }
+.row.calc { display: block; padding: 0; }
 .row.selected { background: var(--sel-bg); }
 .row.disabled { opacity: 0.45; }
 
 .row .iconbox {
-  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  flex: 0 0 22px;
   width: 22px; height: 22px;
   display: flex; align-items: center; justify-content: center;
 }
@@ -206,7 +212,7 @@ html, body {
 .row.selected .iconbox span { color: var(--accent); }
 
 .row .middle {
-  position: absolute; top: 50%; transform: translateY(-50%);
+  flex: 1 1 auto; min-width: 0;
   display: flex; align-items: baseline; gap: 8px;
   overflow: hidden; white-space: nowrap;
 }
@@ -227,7 +233,7 @@ html, body {
 }
 
 .row .accessories {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  margin-left: auto; flex-shrink: 0;
   display: flex; align-items: center; gap: 10px;
 }
 .row .alias-chip {

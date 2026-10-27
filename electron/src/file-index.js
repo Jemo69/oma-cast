@@ -39,11 +39,20 @@ function createFileIndex(opts) {
     return false
   }
 
+  // Lowercased name/path for match(): computed once here (or backfilled
+  // on cache load) so every keystroke doesn't re-lower 100k strings.
+  // Stripped before writing — the disk format stays {p,n,d,m}. [D]
+  function withLower(entry) {
+    if (entry.nl === undefined) entry.nl = String(entry.n || "").toLowerCase()
+    if (entry.pl === undefined) entry.pl = String(entry.p || "").toLowerCase()
+    return entry
+  }
   function loadCache() {
     if (!cachePath) return false
     try {
       var doc = JSON.parse(fs.readFileSync(cachePath, "utf8"))
       if (doc && doc.v === CACHE_VERSION && Array.isArray(doc.entries)) {
+        for (var li = 0; li < doc.entries.length; li++) withLower(doc.entries[li])
         state.entries = doc.entries
         state.lastIndexedAt = Number(doc.at) || 0
         state.ready = true
@@ -59,7 +68,10 @@ function createFileIndex(opts) {
     try {
       fs.mkdirSync(path.dirname(cachePath), { recursive: true })
       var tmp = cachePath + ".tmp"
-      fs.writeFileSync(tmp, JSON.stringify({ v: CACHE_VERSION, at: state.lastIndexedAt, entries: state.entries }))
+      // Strip the in-memory lowercased copies: disk stays {p,n,d,m} so an
+      // old build can still read it and the file doesn't double in size.
+      var slim = state.entries.map(function(e) { return { p: e.p, n: e.n, d: e.d, m: e.m } })
+      fs.writeFileSync(tmp, JSON.stringify({ v: CACHE_VERSION, at: state.lastIndexedAt, entries: slim }))
       fs.renameSync(tmp, cachePath)
     } catch (e) { /* cache is best-effort */ }
   }
@@ -77,7 +89,10 @@ function createFileIndex(opts) {
 
     function step() {
       if (token !== generation) { state.loading = false; return Promise.resolve() }
-      var budget = 400          // entries processed before yielding
+      // Small slices so typing stays responsive while indexing: each chunk
+      // is a few ms of sync readdir/stat, then the event loop (and input
+      // events) get a turn before the next slice. [D]
+      var budget = 120          // entries processed before yielding
       while (queue.length > 0 && budget > 0) {
         var job = queue.shift()
         var dir = job.dir
@@ -94,7 +109,7 @@ function createFileIndex(opts) {
           } else if (dirent.isFile()) {
             var m = 0
             try { m = fs.statSync(full).mtimeMs } catch (e) { continue }
-            out.push({ p: full, n: name, d: false, m: m })
+            out.push(withLower({ p: full, n: name, d: false, m: m }))
           } else continue
           if (out.length >= MAX_ENTRIES) { truncated = true; queue.length = 0; break }
           if (--budget <= 0) break
@@ -102,7 +117,10 @@ function createFileIndex(opts) {
         if (budget <= 0 && queue.length > 0) break
       }
       if (queue.length > 0) {
-        return new Promise(function(resolve) { setImmediate(resolve) }).then(step)
+        // setTimeout(0), not setImmediate: input/render tasks queued behind
+        // a setImmediate chain can starve while indexing; a timer yields to
+        // them between slices. [D]
+        return new Promise(function(resolve) { setTimeout(resolve, 0) }).then(step)
       }
       return null
     }
@@ -121,7 +139,7 @@ function createFileIndex(opts) {
         while (parent && !dirSet[parent] && !seen[parent]) {
           seen[parent] = true
           var nm = parent.slice(parent.lastIndexOf("/") >= 0 ? parent.lastIndexOf("/") + 1 : 0) || parent
-          dirs.push({ p: parent, n: path.basename(parent), d: true, m: 0 })
+          dirs.push(withLower({ p: parent, n: path.basename(parent), d: true, m: 0 }))
           var up = FileSearch.parentOf(parent)
           if (up === parent) break
           parent = up

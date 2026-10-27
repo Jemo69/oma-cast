@@ -159,6 +159,7 @@ var el = {}
 
 // ------------------------------------------------------------ theme paint
 function applyThemeVars() {
+  if (typeof clearMeasureCache === "function") clearMeasureCache()
   var L = look()
   var root = document.documentElement.style
   root.setProperty("--bg", L.background)
@@ -194,6 +195,7 @@ function applyThemeVars() {
 
 // Card geometry: QML card width/height/y formulas with Style.gapsOut.
 function layout() {
+  if (typeof clearMeasureCache === "function") clearMeasureCache()
   var L = look()
   var gaps = theme.style.gapsOut
   var winW = window.innerWidth
@@ -230,11 +232,25 @@ function layout() {
 }
 
 // ------------------------------------------------------------------ header
+// offsetWidth forces a synchronous layout: a full list rebuild used to pay
+// one per row (accessories) plus several for the header, per keystroke.
+// Cache by font+text (cleared on theme/zoom change) so repeated labels
+// like "Application" measure once. [D]
+var measureCache = {}
+var measureCacheSize = 0
 function measure(text, fontCss) {
+  var key = fontCss + "\u0001" + text
+  var hit = measureCache[key]
+  if (hit !== undefined) return hit
   el.mirror.style.font = fontCss
   el.mirror.textContent = String(text || "")
-  return el.mirror.offsetWidth
+  var w = el.mirror.offsetWidth
+  if (measureCacheSize > 3000) { measureCache = {}; measureCacheSize = 0 }
+  measureCache[key] = w
+  measureCacheSize++
+  return w
 }
+function clearMeasureCache() { measureCache = {}; measureCacheSize = 0 }
 
 function placeholderText() {
   var v = view()
