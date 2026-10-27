@@ -17,10 +17,11 @@ var SCAN_SCRIPT = [
   "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}",
   "$shell = New-Object -ComObject WScript.Shell",
   // .lnk rows: user Start Menu, machine Start Menu, then both Desktops —
-  // installers scatter shortcuts across all four. [D]
+  // installers scatter shortcuts across all four. The Start Menu roots
+  // (not just Programs) are walked so stray top-level links count too. [D]
   "$dirs = @()",
-  "if ($env:APPDATA) { $dirs += (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs') }",
-  "if ($env:ProgramData) { $dirs += (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs') }",
+  "if ($env:APPDATA) { $dirs += (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu') }",
+  "if ($env:ProgramData) { $dirs += (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu') }",
   "try { $d = [Environment]::GetFolderPath('Desktop'); if ($d) { $dirs += $d } } catch {}",
   "if ($env:PUBLIC) { $d = Join-Path $env:PUBLIC 'Desktop'; if (Test-Path -LiteralPath $d) { $dirs += $d } }",
   "$out = @()",
@@ -47,6 +48,23 @@ var SCAN_SCRIPT = [
   "  } catch {}",
   "}",
   "foreach ($a in $store) { if ($a -and $a.name -and $a.appid) { $out += [PSCustomObject]@{ name = $a.name; link = ''; target = ''; appid = $a.appid } } }",
+  // Registered exes with no shortcut anywhere (portable tools, dev-tool
+  // binaries, browsers): the App Paths keys map an exe name to its full
+  // path. Registry reads only — no COM — so these survive locked-down
+  // PowerShells where WScript.Shell fails. Listed last so a real shortcut
+  // for the same name wins the dedup. [D]
+  "foreach ($hive in @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths', 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths')) {",
+  "  if (-not (Test-Path -LiteralPath $hive)) { continue }",
+  "  Get-ChildItem -LiteralPath $hive | ForEach-Object {",
+  "    try {",
+  "      $p = (Get-ItemProperty -LiteralPath $_.PSPath).'(default)'",
+  "      if ($p) { $p = ([string]$p).Trim().Trim([char]34).Trim() }",
+  "      if ($p -and (Test-Path -LiteralPath $p -PathType Leaf)) {",
+  "        $out += [PSCustomObject]@{ name = ($_.PSChildName -replace '\\.exe$', ''); link = $p; target = $p; apppaths = 1 }",
+  "      }",
+  "    } catch {}",
+  "  }",
+  "}",
   "$out | ConvertTo-Json -Compress"
 ].join("\n")
 
@@ -174,10 +192,14 @@ function createApps(opts) {
       try { parsed = JSON.parse(res.stdout) || [] } catch (e) { parsed = [] }
       if (!Array.isArray(parsed)) parsed = [parsed]
       var seen = {}
+      var seenTargets = {}
       var out = []
       // Script order: user Start Menu, machine Start Menu, Desktops, then
-      // the Store rows — keep the first of each name (a .lnk beats a Store
-      // row: it has a real icon) and drop nameless rows. [D]
+      // the Store rows, then App Paths — keep the first of each name (a
+      // .lnk beats a Store row: it has a real icon) and drop nameless
+      // rows. App Paths rows are a safety net, so one whose exe is already
+      // covered by a shortcut row is skipped (WINWORD must not double
+      // Word); the shortcut rows record their targets for that. [D]
       for (var i = 0; i < parsed.length; i++) {
         var row = parsed[i]
         if (!row || !row.name) continue
@@ -186,6 +208,12 @@ function createApps(opts) {
         if (!link && !appid) continue
         var key = String(row.name).toLowerCase()
         if (seen[key]) continue
+        var normTarget = String(row.target || "").toLowerCase().replace(/\//g, "\\")
+        if (row.apppaths) {
+          if (normTarget && seenTargets[normTarget]) continue
+        } else if (link && normTarget) {
+          seenTargets[normTarget] = true
+        }
         seen[key] = true
         // A Store/MSIX row has no file on disk: a uwp: id routes launch
         // through shell:AppsFolder and the icon slot to apps.iconSource,

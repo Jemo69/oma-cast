@@ -574,6 +574,15 @@ test("the app library also covers Desktop and Store/MSIX apps", () => {
   assert.equal(apps.launchArg("uwp:Notion_abc123!App"), "shell:AppsFolder\\Notion_abc123!App")
 })
 
+test("the app library also covers App Paths registrations", () => {
+  const apps = require("./apps")
+  assert.match(apps.SCAN_SCRIPT, /App Paths/, "registered exes without shortcuts resolve too")
+  assert.match(apps.SCAN_SCRIPT, /HKCU:[^']*App Paths/, "…in both registry hives")
+  assert.ok(!/Start Menu\\Programs/.test(apps.SCAN_SCRIPT), "the Start Menu roots are walked, not just Programs")
+  assert.ok(!apps.SCAN_SCRIPT.includes("$args"), "no trailing -Command arguments")
+  assert.equal(apps.launchArg("C:\\Tools\\app.exe"), "C:\\Tools\\app.exe")
+})
+
 // ------------------------------------------------------- take me there
 test("opening an app switches to its existing window instead of a second instance", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "oma-cast-switch-"))

@@ -894,7 +894,13 @@ function createBackend(opts) {
     if (processes) processes.on("changed", function() { candidatesRevision++ })
 
     if (apps) {
-      apps.on("changed", scheduleRebuild)
+      // Log the library size on every scan: `oma-cast doctor` prints it
+      // too, and together they show whether "missing apps" is a scan
+      // problem or a ranking problem. [D]
+      apps.on("changed", function() {
+        log("info", "app", "library refreshed", { entries: apps.entries.length })
+        scheduleRebuild()
+      })
       apps.refresh()
     }
     rebuildCandidates()
