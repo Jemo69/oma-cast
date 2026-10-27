@@ -35,15 +35,16 @@
 html, body {
   width: 100%; height: 100%;
   overflow: hidden;
-  background: transparent;
+  background: rgba(0, 0, 0, 0) !important;
+  background-color: rgba(0, 0, 0, 0) !important;
   font-family: var(--font-menu);
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
 
 /* --- the overlay window ------------------------------------------------ */
-#windows, #window { position: absolute; inset: 0; }
-#window { background: transparent; }
+#windows, #window { position: absolute; inset: 0; background: rgba(0,0,0,0) !important; }
+#window { background: rgba(0,0,0,0) !important; }
 
 /* --- the card (BorderSurface) ------------------------------------------ */
 #card {

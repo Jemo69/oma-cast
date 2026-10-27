@@ -441,7 +441,9 @@ document.addEventListener("keydown", function(e) {
   if (handleKey(e)) { e.preventDefault(); e.stopPropagation() }
 }, true)
 
-// Overlay click = dismiss; card click = close popups and refocus.
+// Small-window mode: clicks outside the window land on the underlying app
+// and dismiss us through main's blur handler; the #window mousedown below
+// only catches the rounding pixels. Card click = close popups and refocus.
 el.window.addEventListener("mousedown", function(e) {
   if (e.target === el.window && !backend.config.keepVisibleOnFocusLoss) host.dismiss()
 })

@@ -1,5 +1,5 @@
 // oma-cast Electron main process: the host layer that Quickshell provided
-// on Omarchy. One frameless transparent overlay window covering the
+// on Omarchy. One frameless transparent card-sized window centered on the
 // monitor under the cursor, a global hotkey, a named-pipe CLI endpoint
 // (the IpcHandler twin), clipboard-paste orchestration and HUD toasts.
 // Everything else — backend, stores, ranking, the UI — lives in the
@@ -266,9 +266,15 @@ function createWindow() {
     show: false,
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
+    // Estimate: the renderer reports the real card size on every layout
+    // and main resizes to fit (see resize-window below). [D]
+    width: 760,
+    height: 500,
     resizable: false,
     movable: false,
     hasShadow: false,
+    thickFrame: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
@@ -280,6 +286,9 @@ function createWindow() {
     }
   })
   // Layer-shell Overlay equivalent: above normal windows, no taskbar entry.
+  // Defensive: force alpha 0 — without this Windows may paint the
+  // fullscreen transparent window as opaque black on some GPUs/drivers.
+  try { win.setBackgroundColor('#00000000') } catch (e) {}
   win.setAlwaysOnTop(true, "screen-saver")
   win.setMenuBarVisibility(false)
   win.loadFile(path.join(__dirname, "ui", "index.html"))
@@ -291,8 +300,9 @@ function createWindow() {
   win.webContents.on("did-finish-load", function() { logLine("renderer loaded") })
 
   // Focus loss dismisses unless keepVisibleOnFocusLoss (the config key
-  // Backend.qml gates its click-to-dismiss on). Clicks on the transparent
-  // area are handled in the renderer. [D]
+  // Backend.qml gates its click-to-dismiss on). The window is card-sized,
+  // so clicks outside it land on the underlying app and arrive here as
+  // blur. [D]
   win.on("blur", function() {
     logLine("window blurred (had focus: " + hadFocus + ")")
     // We no longer hold the foreground: whatever got clicked already has
@@ -303,11 +313,21 @@ function createWindow() {
   win.on("closed", function() { win = null })
 }
 
-// The card sits on the monitor under the mouse, like Raycast's
-// "mouse-screen" presentation (settings general.windowPresentationMode).
-function placeOnMouseScreen() {
+// Card-sized window, centered on the monitor under the cursor (Raycast /
+// Spotlight style). The old fullscreen transparent overlay painted the
+// whole monitor opaque black wherever transparency fails (VMs, RDP, some
+// drivers) — a small window keeps the desktop visible around the card even
+// then; only the rounded corners need alpha. [D]
+function placeOnMouseScreen(width, height) {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-  win.setBounds(display.bounds)
+  const area = display.workArea || display.bounds
+  const w = Math.max(200, Math.min(Math.round(width || 760), area.width))
+  const h = Math.max(100, Math.min(Math.round(height || 500), area.height))
+  const gaps = 5
+  // Same y rule as the QML card: max(gaps, min(h/4, h - fullH - gaps)).
+  const y = area.y + Math.max(gaps, Math.min(Math.round(area.height / 4), area.height - h - gaps))
+  const x = area.x + Math.round((area.width - w) / 2)
+  win.setBounds({ x: x, y: y, width: w, height: h })
 }
 
 // Break the Windows foreground lock when plain focus() lost: ALT tap +
@@ -348,7 +368,7 @@ function grabKeyboardFocus() {
 
 function show() {
   if (!win) return
-  placeOnMouseScreen()
+  placeOnMouseScreen(760, 500)
   var wasOpen = isOpen
   hadFocus = false
   // Map WITHOUT activating: the window we took the foreground from keeps
@@ -443,6 +463,25 @@ ipcMain.on("host-hud", function(e, text) {
   new Notification({ title: "oma-cast", body: String(text || ""), silent: true }).show()
 })
 ipcMain.on("dismiss", function() { hide() })
+// The renderer reports its card size after every layout (zoom, theme,
+// compact ↔ expanded); fit the window to it. Top edge stays put so the
+// compact header and the expanded card share the same y; horizontally
+// re-centered. Ignored while hidden — the next show() places fresh. [D]
+ipcMain.on("resize-window", function(e, size) {
+  if (!win || win.isDestroyed() || !isOpen) return
+  const w = Math.round(size && size.width || 0)
+  const h = Math.round(size && size.height || 0)
+  if (!(w > 0 && h > 0)) return
+  try {
+    const b = win.getBounds()
+    if (b.width === w && b.height === h) return
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    const area = display.workArea || display.bounds
+    const cw = Math.max(200, Math.min(w, area.width))
+    const ch = Math.max(100, Math.min(h, area.height))
+    win.setBounds({ x: b.x + Math.round((b.width - cw) / 2), y: b.y, width: cw, height: ch })
+  } catch (err) { logLine("resize-window failed: " + err) }
+})
 // ↵ on an app row: "take me there" — ask whether that program already has
 // a window (the helper does process → hwnd → restore + focus). Clearing
 // prevFh HERE is what keeps the close that follows from handing focus

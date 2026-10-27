@@ -93,6 +93,10 @@ module.exports = {
   },
 
   dismiss: function() { ipcRenderer.send("dismiss") },
+  // Card geometry lives in the renderer (ui/app.js layout()); main owns
+  // the OS window, so the renderer reports its size here. Best-effort:
+  // plain node (unit tests) has no bridge. [D]
+  resizeWindow: function(w, h) { try { ipcRenderer.send("resize-window", { width: w, height: h }) } catch (e) {} },
   focusAppWindow: function(name, cb) {
     var id = ++focusSeq
     var done = false

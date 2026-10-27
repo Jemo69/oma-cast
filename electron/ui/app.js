@@ -193,26 +193,30 @@ function applyThemeVars() {
   }
 }
 
-// Card geometry: QML card width/height/y formulas with Style.gapsOut.
+// Card geometry: QML card width/height formulas with Style.gapsOut.
+// Small-window mode: the OS window IS the card (only rounding needs
+// alpha), so clamp to the display's available size — not the window —
+// and pin the card at 0,0. The window starts at main's 760×500 estimate
+// and is resized to fit via host.resizeWindow (guarded: the resize event
+// that triggers re-enters layout with the same size). [D]
 function layout() {
   if (typeof clearMeasureCache === "function") clearMeasureCache()
   var L = look()
   var gaps = theme.style.gapsOut
-  var winW = window.innerWidth
-  var winH = window.innerHeight
+  var availW = (window.screen && window.screen.availWidth) || window.innerWidth
+  var availH = (window.screen && window.screen.availHeight) || window.innerHeight
   var headerH = px(66)
   var footerH = px(42)
-  var cardW = Math.min(px(750), winW - gaps * 2)
-  var fullH = Math.min(px(475), winH - gaps * 2)
+  var cardW = Math.min(px(750), availW - gaps * 2)
+  var fullH = Math.min(px(475), availH - gaps * 2)
   var isCompact = compact()
   var cardH = isCompact ? headerH + theme.borderSpec.widths.top + theme.borderSpec.widths.bottom : fullH
-  var y = Math.max(gaps, Math.min(Math.round(winH / 4), winH - fullH - gaps))
 
   var c = el.card
   c.style.width = cardW + "px"
   c.style.height = cardH + "px"
-  c.style.left = Math.round((winW - cardW) / 2) + "px"
-  c.style.top = y + "px"
+  c.style.left = "0px"
+  c.style.top = "0px"
 
   var bt = Math.round(theme.borderSpec.widths.top)
   var bb = Math.round(theme.borderSpec.widths.bottom)
@@ -229,6 +233,13 @@ function layout() {
   el.headerHair.style.display = isCompact ? "none" : "block"
   el.loader.style.setProperty("--header-w", cardW + "px")
   el.loader.style.width = Math.round(cardW / 4) + "px"
+  if (host && host.resizeWindow) {
+    if (cardW !== layout.lastW || cardH !== layout.lastH) {
+      layout.lastW = cardW
+      layout.lastH = cardH
+      try { host.resizeWindow(cardW, cardH) } catch (e) {}
+    }
+  }
 }
 
 // ------------------------------------------------------------------ header
