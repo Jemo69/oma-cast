@@ -168,6 +168,8 @@ Windows-port additions (2026-10-25, user-driven): **file search** (`FileSearch.j
 
 **0.2.3 (2026-10-27):** app searches returned files instead of the app — two compounding defects, reproduced without a Windows box. `FileSearch.match` fell back to full-*path* matching with no quality floor, so `files` returned `data.db` purely because its path contains `...\Files\...`; and well-known apps couldn't match their natural query (`files` vs "File Explorer", `notes` vs "Notepad", `screenshot` vs "Snipping Tool") because entries carry no keywords and the ranker is the strict exact port. Fix: `match()` gains a `nameOnly` option, the backend passes it for single-token non-path queries (multi-token and path-like queries keep path matching), and `apps.js` carries a small alias table (`APP_KEYWORDS`, exported as `keywordsFor` for tests). `files` now ranks File Explorer with no Files section; `notes` ranks Notepad *and* keeps the genuine `notes.txt` row.
 
+**0.2.4 (2026-10-27):** typing-lag fix. Keystrokes painted immediately with the heavy search coalesced to one rebuild per burst (Enter/actions flush first); rows switched to flexbox (no per-row forced layout); file-match lowers each entry once per query with index-cached lowercase; index walk slices 400→120 with timer yields; Start Menu scan throttled to 30 s and icon extractions capped at 4 concurrent with duplicate coalescing; show paints from cache first, background refresh deferred 250 ms.
+
 Deviations from the original spec (SPEC §2.0 and the Phase 1 note in §12):
 - A Quickshell plugin instead of Tauri + Node; there's no NDJSON supervisor until Phase 5.
 - JSON documents instead of SQLite; no DB encryption or libsecret key.
