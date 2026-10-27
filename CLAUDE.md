@@ -170,6 +170,10 @@ Windows-port additions (2026-10-25, user-driven): **file search** (`FileSearch.j
 
 **0.2.4 (2026-10-27):** typing-lag fix. Keystrokes painted immediately with the heavy search coalesced to one rebuild per burst (Enter/actions flush first); rows switched to flexbox (no per-row forced layout); file-match lowers each entry once per query with index-cached lowercase; index walk slices 400→120 with timer yields; Start Menu scan throttled to 30 s and icon extractions capped at 4 concurrent with duplicate coalescing; show paints from cache first, background refresh deferred 250 ms.
 
+**0.2.5 (2026-10-27):** black-screen fix. The launcher was a fullscreen transparent overlay, which paints the whole monitor opaque black wherever compositing fails (VMs, RDP, some drivers). It is now a card-sized window centered on the monitor under the cursor (Raycast/Spotlight style): the renderer reports its card size after every layout (`host.resizeWindow` → `resize-window`) and main resizes to fit, so even with no alpha the desktop stays visible around the card and only the rounded corners are affected. Clicks outside dismiss through blur as before.
+
+**0.2.6 (2026-10-27):** missing-apps coverage. The scan only walked Start Menu Programs + Desktops plus Store rows, so registered exes with no shortcut anywhere (portable tools, dev-tool binaries, browsers) were invisible. It now walks the Start Menu roots (stray top-level links count) and appends the App Paths registry (HKLM + HKCU, registry reads only — no COM, so they survive locked-down PowerShells), skipping an App Paths row whose exe a shortcut row already covers. Every scan also logs its entry count (`library refreshed` in main.log) next to the doctor's `applications:` line, so a short list is diagnosable.
+
 Deviations from the original spec (SPEC §2.0 and the Phase 1 note in §12):
 - A Quickshell plugin instead of Tauri + Node; there's no NDJSON supervisor until Phase 5.
 - JSON documents instead of SQLite; no DB encryption or libsecret key.
