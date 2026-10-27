@@ -8,7 +8,8 @@ const os = require("node:os")
 const path = require("node:path")
 const { createBackend } = require("./backend")
 
-function setup() {
+function setup(overrides) {
+  overrides = overrides || {}
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "oma-cast-backend-"))
   const paths = {
     home: root, config: path.join(root, "config"), configFile: path.join(root, "config", "config.json"),
@@ -27,7 +28,7 @@ function setup() {
     pasteText: function(t) { calls.pasted.push(t) },
     checkCommand: function(exe, cb) { calls.commands.push(exe); cb(true) }
   }
-  const apps = {
+  const apps = overrides.apps || {
     entries: [
       { id: "C:\\links\\Firefox.lnk", name: "Firefox", icon: "", keywords: [] },
       { id: "C:\\links\\Files.lnk", name: "Files", icon: "", keywords: [] }
@@ -39,7 +40,8 @@ function setup() {
     launch: function(id) { calls.launched.push(id) },
     iconSource: function() { return Promise.resolve("") }
   }
-  const backend = createBackend({ paths: paths, host: host, apps: apps }).start()
+  const fileIndex = overrides.fileIndex || null
+  const backend = createBackend({ paths: paths, host: host, apps: apps, fileIndex: fileIndex }).start()
   return { backend, calls, paths, apps }
 }
 
@@ -78,6 +80,71 @@ test("root search ranks the Start Menu apps and keeps the builtins", () => {
   const appsSection = empty.data.find(function(s) { return s.id === "apps" })
   assert.ok(appsSection, "has an Applications section")
   assert.equal(appsSection.rows.length, 2)
+  backend.dispose()
+})
+
+test("well-known Windows apps carry search aliases", () => {
+  const { keywordsFor } = require("./apps")
+  assert.ok(keywordsFor("File Explorer").indexOf("files") >= 0)
+  assert.ok(keywordsFor("Snipping Tool").indexOf("screenshot") >= 0)
+  assert.ok(keywordsFor("Notepad").indexOf("notes") >= 0)
+  assert.ok(keywordsFor("Task Manager").indexOf("taskmgr") >= 0)
+  assert.ok(keywordsFor("Remote Desktop Connection").indexOf("rdp") >= 0)
+  assert.deepEqual(keywordsFor("Google Chrome"), [])
+  assert.deepEqual(keywordsFor(""), [])
+  assert.deepEqual(keywordsFor(null), [])
+})
+
+test("a single-token app search finds the app, not path-only file hits", () => {
+  const { keywordsFor } = require("./apps")
+  function stubApps(entries) {
+    return {
+      entries: entries,
+      loading: false,
+      on: function() {},
+      refresh: function() { return Promise.resolve(this.entries) },
+      launch: function() {},
+      iconSource: function() { return Promise.resolve("") }
+    }
+  }
+  const { backend } = setup({
+    apps: stubApps([
+      { id: "C:\\links\\File Explorer.lnk", name: "File Explorer", icon: "", keywords: keywordsFor("File Explorer") },
+      { id: "C:\\links\\Notepad.lnk", name: "Notepad", icon: "", keywords: keywordsFor("Notepad") },
+      { id: "C:\\links\\Snipping Tool.lnk", name: "Snipping Tool", icon: "", keywords: keywordsFor("Snipping Tool") }
+    ]),
+    fileIndex: {
+      // data.db matches "files" by PATH only (...\\Files\\data.db): the junk
+      // that used to fill the Files section instead of the app.
+      entries: [
+        { p: "C:\\Users\\u\\Files\\data.db", n: "data.db", d: false, m: 1 },
+        { p: "C:\\Users\\u\\Documents\\notes.txt", n: "notes.txt", d: false, m: 2 },
+        { p: "C:\\Users\\u\\Pictures\\screenshot-1.png", n: "screenshot-1.png", d: false, m: 3 }
+      ],
+      ready: true, loading: false, lastIndexedAt: Date.now(),
+      start: function() {}, refreshIfStale: function() {}, setIncludeHidden: function() {},
+      on: function() {}
+    }
+  })
+  // "files": File Explorer ranks through its alias; no Files section for
+  // a name query with no name hits.
+  const files = backend.callSync("rootSearch.search", { query: "files", view: null, filter: "all" })
+  assert.equal(files.ok, true)
+  const results = files.data.find(function(s) { return s.id === "results" })
+  assert.ok(results, "has a Results section")
+  assert.equal(results.rows[0].title, "File Explorer")
+  assert.equal(results.rows[0].kind, "app")
+  assert.ok(!files.data.some(function(s) { return s.id === "files" }), "path-only data.db stays out")
+  // "notes": both the app (alias) and the genuine name hit surface.
+  const notes = backend.callSync("rootSearch.search", { query: "notes", view: null, filter: "all" })
+  const nres = notes.data.find(function(s) { return s.id === "results" })
+  assert.ok(nres.rows.some(function(r) { return r.title === "Notepad" }), "Notepad ranks")
+  const nfiles = notes.data.find(function(s) { return s.id === "files" })
+  assert.ok(nfiles && nfiles.rows.some(function(r) { return r.title === "notes.txt" }), "notes.txt still surfaces")
+  // "screenshot": the tool ranks through its alias next to the file.
+  const shot = backend.callSync("rootSearch.search", { query: "screenshot", view: null, filter: "all" })
+  const sres = shot.data.find(function(s) { return s.id === "results" })
+  assert.ok(sres.rows.some(function(r) { return r.title === "Snipping Tool" }), "Snipping Tool ranks")
   backend.dispose()
 })
 

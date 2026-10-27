@@ -55,6 +55,27 @@ function psQuote(value) {
   return "'" + String(value).replace(/'/g, "''") + "'"
 }
 
+// Users search system apps by alias — "files" for File Explorer (its title
+// holds no "s"), "screenshot" for the Snipping Tool, "notes" for Notepad —
+// and the strict root ranker (the exact Raycast port) won't bridge that gap.
+// The aliases live here as keywords, so the app still ranks when the name
+// alone doesn't match. Add rows sparingly: title substrings and prefixes
+// already match without help. [D]
+var APP_KEYWORDS = {
+  "file explorer": ["files", "file manager", "this pc"],
+  "snipping tool": ["screenshot", "screenshots", "snip"],
+  "notepad": ["notes", "text editor"],
+  "task manager": ["taskmgr"],
+  "remote desktop connection": ["remote desktop", "rdp", "mstsc"],
+  "command prompt": ["cmd", "command line"],
+  "windows powershell": ["powershell"]
+}
+
+function keywordsFor(name) {
+  var hit = APP_KEYWORDS[String(name || "").toLowerCase()]
+  return hit ? hit.slice() : []
+}
+
 // Icon extraction: 32px associated icon → PNG in the icon cache.
 // The two paths are interpolated (PowerShell-quoted) rather than passed as
 // arguments after -Command: powershell.exe joins everything following
@@ -143,7 +164,7 @@ function createApps(opts) {
           target: String(row.target || ""),
           link: link,
           genericName: "",
-          keywords: [],
+          keywords: keywordsFor(row.name),
           noDisplay: false
         })
       }
@@ -205,5 +226,5 @@ function launchArg(id) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { createApps: createApps, SCAN_SCRIPT: SCAN_SCRIPT, ICON_SCRIPT: ICON_SCRIPT, psQuote: psQuote, fileUrl: fileUrl, launchArg: launchArg }
+  module.exports = { createApps: createApps, SCAN_SCRIPT: SCAN_SCRIPT, ICON_SCRIPT: ICON_SCRIPT, psQuote: psQuote, fileUrl: fileUrl, launchArg: launchArg, APP_KEYWORDS: APP_KEYWORDS, keywordsFor: keywordsFor }
 }

@@ -73,6 +73,22 @@ test("file matching orders name hits before path hits, then by recency", () => {
   assert.equal(top[top.length - 1].tier, 2)
 })
 
+test("nameOnly keeps single-token queries on the file name", () => {
+  const entries = [
+    ent("C:/z/notes-report.txt", false, 1000),
+    ent("C:/reporting/a.txt", false, 9000),
+    ent("C:/b/report.txt", false, 5000)
+  ]
+  // Default keeps the old tiers (a path-only bag for "report").
+  assert.equal(FileSearch.match(entries, "report", { limit: 10 }).length, 3)
+  // A name query (the root-search app-query guard) drops the path-only hit.
+  const named = FileSearch.match(entries, "report", { limit: 10, nameOnly: true })
+  assert.deepEqual(named.map(r => r.entry.n).sort(), ["notes-report.txt", "report.txt"])
+  assert.ok(named.every(r => r.tier === 0))
+  // …but a bare name with no name hits finds nothing instead of path junk.
+  assert.deepEqual(FileSearch.match([ent("C:/Files/data.db", false, 1)], "files", { limit: 10, nameOnly: true }), [])
+})
+
 test("every token must match, name or path, and limits apply", () => {
   const entries = [
     ent("/home/u/Desktop/quarterly report.docx", false, 1),

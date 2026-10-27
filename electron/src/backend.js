@@ -648,10 +648,15 @@ function createBackend(opts) {
           sections = RootSearch.rootSections(candidates, query, ctx, deps)
           // SPEC §8.6: a Files section after Results (before the “Use ‘q’
           // with…” fallbacks), once the query is long enough to plausibly
-          // be a file name.
+          // be a file name. A single-token name query ("files", "notes")
+          // only matches file NAMES: a path-only hit (C:\…\Files\data.db
+          // for "files") is how an app search turns into a wall of files.
+          // Path bags stay for multi-token and path-like queries (slashes,
+          // a drive colon, ~). [D]
           var fq = query.trim()
           if (ctx.filter === "all" && fq.length >= 2 && fileIndex && fileIndex.ready) {
-            var matches = FileSearch.match(fileIndex.entries, fq, { limit: 30 })
+            var pathLike = /[\/\\~:]/.test(fq) || fq.split(/\s+/).length > 1
+            var matches = FileSearch.match(fileIndex.entries, fq, { limit: 30, nameOnly: !pathLike })
             if (matches.length > 0) {
               var fileSection = { id: "files", title: "Files", rows: matches.map(function(m) { return toRow(FileSearch.candidate(m.entry)) }) }
               var at = -1, fb = -1

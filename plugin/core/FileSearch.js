@@ -56,6 +56,12 @@ function tokenScore(token, text) {
 function match(entries, query, opts) {
   opts = opts || {}
   var limit = opts.limit || 30
+  // nameOnly (the root-search app-query guard): a single-token name query
+  // ("files", "notes") must match the file NAME. Without it a path-only
+  // hit — C:\…\Files\data.db for "files" — fills the Files section and
+  // an app search looks like a file search. Path bags stay for
+  // multi-token and path-like queries (see backend.js). [D]
+  var nameOnly = !!opts.nameOnly
   var tokens = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (tokens.length === 0 || !entries || entries.length === 0) return []
   var minQuality = opts.minQuality || 0
@@ -68,6 +74,7 @@ function match(entries, query, opts) {
     for (var t = 0; t < tokens.length; t++) {
       var nameScore = tokenScore(tokens[t], entry.n)
       if (nameScore > 0) { quality += nameScore; continue }
+      if (nameOnly) { ok = false; break }
       allInName = false
       var pathScore = tokenScore(tokens[t], entry.p)
       if (pathScore > 0) { quality += pathScore * 0.5; continue }
