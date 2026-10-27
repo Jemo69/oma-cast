@@ -174,6 +174,8 @@ Windows-port additions (2026-10-25, user-driven): **file search** (`FileSearch.j
 
 **0.2.6 (2026-10-27):** missing-apps coverage. The scan only walked Start Menu Programs + Desktops plus Store rows, so registered exes with no shortcut anywhere (portable tools, dev-tool binaries, browsers) were invisible. It now walks the Start Menu roots (stray top-level links count) and appends the App Paths registry (HKLM + HKCU, registry reads only — no COM, so they survive locked-down PowerShells), skipping an App Paths row whose exe a shortcut row already covers. Every scan also logs its entry count (`library refreshed` in main.log) next to the doctor's `applications:` line, so a short list is diagnosable.
 
+**0.2.7 (2026-10-27):** file search provider setting. The Settings view gains a **File Search Provider** row (↵ cycles Built-in Index ⇄ Everything): `everything` queries voidtools Everything through `es.exe` (`%ProgramFiles%\Everything`, then PATH; one sync spawn per query, 5 s cap) so Files goes system-wide and instant, while the same ranker — nameOnly guard included — tiers the hits. A dead Everything (not installed/running) answers null and that query falls back to the walk pool; the walk parks (no re-walk churn) while Everything serves, and resumes when you switch back.
+
 Deviations from the original spec (SPEC §2.0 and the Phase 1 note in §12):
 - A Quickshell plugin instead of Tauri + Node; there's no NDJSON supervisor until Phase 5.
 - JSON documents instead of SQLite; no DB encryption or libsecret key.

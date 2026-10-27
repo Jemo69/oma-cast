@@ -110,7 +110,7 @@ override the bundled template. [D]
 
 | command | what it does |
 |---|---|
-| **File search** | a Files section in root search (SPEC §8.6 slice): name match first, then path, recency within a tier; Open / Reveal in Explorer / Copy Path. Chunked walk of home (or `fileSearchScopes`), 100k cap, 10-min re-walk, disk cache — no inotify watcher yet [D] |
+| **File search** | a Files section in root search (SPEC §8.6 slice): name match first, then path, recency within a tier; Open / Reveal in Explorer / Copy Path. Built-in chunked walk of home (or `fileSearchScopes`), 100k cap, 10-min re-walk, disk cache — or voidtools Everything via `es.exe` when `fileSearchProvider` is `"everything"` (system-wide, instant; same ranker tiers the hits) — no inotify watcher yet [D] |
 | **Settings** | the Phase-2 stub made real: a pushed view over every window/hotkey/search/calculator setting; ↵ cycles values — `hotkey` re-registers and **Open at Login** re-applies immediately |
 | **Kill Process** | running processes by memory (PowerShell snapshot), confirm-first destructive alert, `taskkill /F`, Reveal + Copy PID. The snapshot service is created in `ui/app.js` and handed to the backend — the pushed view is empty without it — and the launcher's own processes (this pid + anything running from `process.execPath`) stay out of the list |
 | **Search unduck** | `https://unduck.link?q=%s` as both a root fallback row and a quicklink with an argument pill |
@@ -157,6 +157,7 @@ Everything the Linux build accepts (`logLevel`, `keepVisibleOnFocusLoss`,
 | `cornerRadius` | `0` | window rounding (Hyprland fallback) |
 | `fileSearchScopes` | `[]` (home dir) | directories the file index walks |
 | `fileSearchIncludeHidden` | `false` | index dotfiles/hidden files |
+| `fileSearchProvider` | `"built-in"` | `"built-in"` walks your folders; `"everything"` queries voidtools Everything via `es.exe` (install Everything, keep it running) across all drives instantly — a dead Everything falls back to the walk for that query; the Settings view's **File Search Provider** row flips it live |
 
 Data lives in `%LOCALAPPDATA%\oma-cast` (`db\settings.json`,
 `db\frecency.json`, `db\calculator.json`), logs in
