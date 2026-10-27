@@ -636,6 +636,27 @@ test("the switch routes through main and suppresses the close hand-back", () => 
   assert.match(hostSrc, /2500/, "…and answers false rather than swallowing a launch")
 })
 
+// The live machine caught this one: Add-Type got ONE [DllImport] for six
+// extern methods, so the type never compiled, every helper command threw
+// and answered "err", and main read that as "not running" — every ↵
+// launched a duplicate (0.2.0/0.2.1). [D]
+test("every extern carries its own DllImport — one attribute fails Add-Type entirely", () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8")
+  // Strip // comments first — the fix is explained in them, bracket and all.
+  const code = mainSrc.replace(/^\s*\/\/.*$/gm, "")
+  const externs = (code.match(/static extern/g) || []).length
+  const imports = (code.match(/\[DllImport/g) || []).length
+  assert.ok(externs >= 8, "paste + steal + the helper's imports: " + externs)
+  assert.equal(imports, externs,
+    "a C# attribute covers only the next declaration; Add-Type refuses to compile the rest, " +
+    "the helper's catch prints err, and every app switch falls back to a duplicate instance")
+  // The steal interpolates a validated integer handle: powershell.exe
+  // joins trailing -Command arguments into the script text, so $args
+  // never binds (the apps.js lesson — it broke this path twice).
+  assert.ok(!code.includes("$args"), "no $args in main.js code")
+  assert.match(mainSrc, /function focusScript\(/)
+})
+
 test("Kill Process: the snapshot drops the launcher's own processes", async () => {
   const { createProcesses, LIST_SCRIPT } = require("./processes")
   const rows = [

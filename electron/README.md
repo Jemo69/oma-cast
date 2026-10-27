@@ -118,7 +118,7 @@ override the bundled template. [D]
 | **Shut Down / Restart / Sleep** | the Omarchy system actions' Windows equivalents: the first two ask the destructive confirm, then schedule `shutdown /s|/r /t 15` with a **Cancel** toast (`shutdown /a`); Sleep closes the window first and suspends via PowerShell `SetSuspendState('Suspend')` to ensure true sleep even when hibernation is enabled [D] |
 
 The window also hands the backend the **file index** behind the Files
-section (`fileSearchScopes` → `roots`, cache in `%LOCALAPPDATA%\oma-cast\cache\file-index.json`)
+section (`fileSearchScopes` → `roots`, cache in `%LOCALAPPDATA%\Temp\oma-cast\file-index.json`)
 and calls `backend.visibility()` on every show/hide, which refreshes
 exchange rates, re-scans the Start Menu and re-walks files when stale.
 Both services and that hook were implemented and unit-tested (the tests
@@ -159,9 +159,11 @@ Everything the Linux build accepts (`logLevel`, `keepVisibleOnFocusLoss`,
 | `fileSearchIncludeHidden` | `false` | index dotfiles/hidden files |
 
 Data lives in `%LOCALAPPDATA%\oma-cast` (`db\settings.json`,
-`db\frecency.json`, `db\calculator.json`, cache, logs); config in
-`%APPDATA%\oma-cast` — the same key set as the XDG layout
-(`plugin/core/Paths.js resolveWindows`).
+`db\frecency.json`, `db\calculator.json`), logs in
+`%LOCALAPPDATA%\State\oma-cast\logs\main.log` and the cache in
+`%LOCALAPPDATA%\Temp\oma-cast` — `resolveWindows` mirrors the XDG state
+and cache layout; config in `%APPDATA%\oma-cast` — the same key set as
+the XDG layout (`plugin/core/Paths.js resolveWindows`).
 
 ## Verifying on a real Windows machine
 

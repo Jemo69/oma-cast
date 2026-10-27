@@ -74,7 +74,7 @@ jobs:
           - Alt+Space hotkey, `oma-cast` CLI over a named pipe (toggle/run/call/doctor), installer with Start Menu + desktop shortcut
 
           ## Install
-          Per-user install, no admin needed. Config: `%APPDATA%\oma-cast\config.json`, data: `%LOCALAPPDATA%\oma-cast`, logs: `%LOCALAPPDATA%\oma-cast\logs\main.log`.
+          Per-user install, no admin needed. Config: `%APPDATA%\oma-cast\config.json`, data: `%LOCALAPPDATA%\oma-cast`, logs: `%LOCALAPPDATA%\State\oma-cast\logs\main.log`.
 
           Unsigned build — SmartScreen will warn until a signing certificate is added.
           '@

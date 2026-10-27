@@ -28,20 +28,41 @@ const PASTE_SCRIPT = [
 // the previous app. The documented way out is a dummy ALT input event
 // (releases the lock) followed by SetForegroundWindow with our real HWND.
 // Only used when the plain focus() attempt lost. [D]
-const FOCUS_SCRIPT = [
-  "Add-Type '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); public static extern bool SetForegroundWindow(IntPtr hWnd);' -Namespace Win32 -Name Input",
-  "[Win32.Input]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)",
-  "[Win32.Input]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)",
-  "[Win32.Input]::SetForegroundWindow([IntPtr]([Int64]$args[0]))"
-].join("; ")
+// One-shot foreground steal: ALT tap + SetForegroundWindow(HWND). The
+// handle is interpolated after validating it as a plain integer —
+// powershell.exe joins everything after -Command into the script text,
+// so a trailing argument never binds to $args (the lesson apps.js
+// already learned), and EVERY extern needs its own DllImport: a C#
+// attribute covers only the next declaration and Add-Type refuses to
+// compile the rest — that one missing attribute is why the helper
+// answered "err" to every getfg/focus/app on 0.2.0/0.2.1. [D]
+function focusScript(hwnd) {
+  if (!/^-?[0-9]+$/.test(String(hwnd))) return null
+  return [
+    "Add-Type '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);' -Namespace Win32 -Name Input",
+    "[Win32.Input]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)",
+    "[Win32.Input]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)",
+    "[Win32.Input]::SetForegroundWindow([IntPtr]" + String(hwnd) + ")"
+  ].join("; ")
+}
 
-// The resident twin of FOCUS_SCRIPT: one PowerShell process answers
+// The resident twin of focusScript(): one PowerShell process answers
 // `ping` / `getfg` / `focus <hwnd>` / `app <exe>` on stdin, one reply per
 // line. Spawning a fresh process per question costs ~300 ms — far too much
 // to sit between the hotkey and the window mapping. `app` is the "take me
 // there" lookup: process → its window → restore + focus. [D]
 const FOCUS_HELPER_SCRIPT = [
-  "Add-Type '[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); public static extern bool SetForegroundWindow(IntPtr hWnd); public static extern bool IsWindow(IntPtr hWnd); public static extern bool IsIconic(IntPtr hWnd); public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);' -Namespace Win32 -Name Input",
+  // One [DllImport] PER extern — an attribute covers only the next
+  // declaration, Add-Type compiles with warnings-as-errors, and one
+  // missing attribute fails the WHOLE type: getfg/focus/app then threw
+  // on every call and answered "err", which read as "not running" and
+  // launched a duplicate. Live-proven on 0.2.1. [D]
+  "Add-Type '[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();",
+  "  [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);",
+  "  [DllImport(\"user32.dll\")] public static extern bool IsWindow(IntPtr hWnd);",
+  "  [DllImport(\"user32.dll\")] public static extern bool IsIconic(IntPtr hWnd);",
+  "  [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);",
+  "  [DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);' -Namespace Win32 -Name Input",
   // One place for restore + focus + the foreground-lock ALT fallback: a
   // minimized window must come back (SW_RESTORE = 9) before focusing. [D]
   "function FocusHwnd([IntPtr]$h) {",
@@ -296,8 +317,10 @@ function stealForeground() {
   if (!win || win.isDestroyed()) return
   let handle = "0"
   try { handle = String(win.getNativeWindowHandle().readBigInt64LE()) } catch (e) {}
+  var script = focusScript(handle)
+  if (!script) { logLine("foreground steal: unusable handle " + handle); return }
   execFile("powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FOCUS_SCRIPT, handle],
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
     { windowsHide: true, timeout: 5000 },
     function(err) {
       const focused = !!(win && !win.isDestroyed() && win.isFocused())
