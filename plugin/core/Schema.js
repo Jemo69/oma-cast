@@ -94,12 +94,18 @@ var configDefaults = {
   // File search scopes (SPEC §8.6): empty → the user's home directory.
   // [D] includeHidden defaults off, matching Raycast's default.
   fileSearchScopes: [],
-  fileSearchIncludeHidden: false
+  fileSearchIncludeHidden: false,
+  // File search provider (SPEC §8.6): the built-in chunked walk, or
+  // voidtools Everything via es.exe — system-wide and instant, needs
+  // Everything installed and running. A dead Everything falls back to
+  // the walk pool for that query. [D]
+  fileSearchProvider: "built-in"
 }
 
 // Values a config key or general setting may take, beyond its type.
 var configChoices = {
-  clockFormat: ["auto", "12h", "24h"]
+  clockFormat: ["auto", "12h", "24h"],
+  fileSearchProvider: ["built-in", "everything"]
 }
 
 // Number keys allowed to be zero (gapsOut/cornerRadius mirror Hyprland

@@ -6,18 +6,99 @@
 // a 100k-entry cap instead of a 500k SQLite/FTS index.
 var fs = require("fs")
 var path = require("path")
+var childProcess = require("child_process")
 var FileSearch = require("../../plugin/core/FileSearch.js")
 
 var MAX_ENTRIES = 100000
 var CACHE_VERSION = 1
 var STALE_AFTER_MS = 10 * 60 * 1000
 
+// Everything (voidtools) file search — the optional fileSearchProvider.
+// Everything indexes every local drive in real time and its es.exe CLI
+// answers a query in milliseconds, so the Files section goes system-wide
+// without the home-dir walk. Needs Everything installed AND running (the
+// service answers es.exe); otherwise searchEverything returns null and
+// the built-in index stays the pool. No new dependency: one sync spawn of
+// a millisecond-fast CLI, straight argv (no shell, no quoting games). [D]
+var ES_RESULT_LIMIT = 100
+var ES_DETECT_TTL_MS = 60000
+
+// Where es.exe lives: beside Everything.exe in %ProgramFiles% (both
+// bitnesses), else anywhere on PATH (choco/scoop installs). fakes
+// injectable for tests (env/existsSync/runWhere). [D]
+function findEsExe(opts) {
+  opts = opts || {}
+  var env = opts.env || function(k) { return process.env[k] }
+  var exists = opts.existsSync || fs.existsSync
+  var cands = []
+  var pf = env("ProgramFiles")
+  var pf86 = env("ProgramFiles(x86)")
+  if (pf) cands.push(path.join(pf, "Everything", "es.exe"))
+  if (pf86 && pf86 !== pf) cands.push(path.join(pf86, "Everything", "es.exe"))
+  for (var i = 0; i < cands.length; i++) {
+    try { if (exists(cands[i])) return cands[i] } catch (e) {}
+  }
+  try {
+    var out = opts.runWhere
+      ? opts.runWhere()
+      : childProcess.execFileSync("where.exe", ["es.exe"], { encoding: "utf8", timeout: 3000, windowsHide: true })
+    var lines = String(out || "").split(/\r?\n/)
+    for (var j = 0; j < lines.length; j++) {
+      var line = lines[j].trim()
+      if (!line) continue
+      try { if (!exists(line)) continue } catch (e) {}
+      return line
+    }
+  } catch (e) { /* not on PATH */ }
+  return null
+}
+
 function createFileIndex(opts) {
   opts = opts || {}
   var roots = (opts.roots && opts.roots.length ? opts.roots : [opts.home]).filter(Boolean)
   var includeHidden = !!opts.includeHidden
+  var provider = opts.provider === "everything" ? "everything" : "built-in"
+  var execEs = opts.execEs || null     // test hook: function(esExe, args) -> stdout
+  var esExeOpt = opts.esExe || null    // test hook: skip detection
+  var esCache = { at: 0, path: undefined }
   var exclude = opts.exclude || FileSearch.DEFAULT_EXCLUDE_DIRS
   var cachePath = opts.cachePath || ""
+
+  function everythingAvailable() {
+    if (esExeOpt) return esExeOpt
+    if (esCache.path !== undefined && Date.now() - esCache.at < ES_DETECT_TTL_MS) return esCache.path
+    var found = findEsExe()
+    esCache = { at: Date.now(), path: found }
+    return found
+  }
+  function useEverything() { return provider === "everything" && !!everythingAvailable() }
+  // One Everything query, shaped like walk entries (nl/pl included so the
+  // shared ranker costs nothing). null = Everything is dead → caller falls
+  // back to the walk pool. A per-file stat recovers the dir flag + mtime
+  // for the glyph and the recency tier; an unstatable hit is kept anyway. [D]
+  function searchEverything(query, limit) {
+    var es = everythingAvailable()
+    if (provider !== "everything" || !es) return null
+    var q = String(query || "").trim()
+    if (!q) return null
+    var stdout
+    try {
+      stdout = execEs
+        ? execEs(es, ["-n", String(limit || ES_RESULT_LIMIT), q])
+        : childProcess.execFileSync(es, ["-n", String(limit || ES_RESULT_LIMIT), q],
+            { encoding: "utf8", timeout: 5000, maxBuffer: 4 * 1024 * 1024, windowsHide: true })
+    } catch (e) { return null }
+    var lines = String(stdout || "").replace(/^\uFEFF/, "").split(/\r?\n/)
+    var out = []
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim()
+      if (!line) continue
+      var d = false, m = 0
+      try { var st = fs.statSync(line); d = st.isDirectory(); m = st.mtimeMs } catch (e) {}
+      out.push(withLower({ p: line, n: path.basename(line) || line, d: d, m: m }))
+    }
+    return out
+  }
 
   var state = {
     entries: [],
@@ -162,6 +243,7 @@ function createFileIndex(opts) {
 
   function refreshIfStale(force) {
     if (state.loading) return
+    if (useEverything()) return      // Everything answers live; the walk stays parked
     if (force || Date.now() - state.lastIndexedAt > STALE_AFTER_MS) walk()
   }
 
@@ -170,19 +252,36 @@ function createFileIndex(opts) {
     get ready() { return state.ready },
     get loading() { return state.loading },
     get lastIndexedAt() { return state.lastIndexedAt },
+    get provider() { return provider },
     roots: roots,
     start: function() {
       var fromCache = loadCache()
+      if (useEverything()) {
+        // No walk: Everything answers live. The cache (possibly empty)
+        // seeds the fallback pool; ready so the section works at once. [D]
+        if (!state.ready) state.ready = true
+        emit()
+        return
+      }
       if (!fromCache || Date.now() - state.lastIndexedAt > STALE_AFTER_MS) walk()
       else emit()
     },
     refresh: function() { walk() },
     refreshIfStale: refreshIfStale,
     on: function(event, cb) { if (listeners[event]) listeners[event].push(cb) },
-    setIncludeHidden: function(v) { includeHidden = !!v }
+    setIncludeHidden: function(v) { includeHidden = !!v },
+    setProvider: function(v) {
+      provider = (v === "everything") ? "everything" : "built-in"
+      if (useEverything()) {
+        if (!state.ready) state.ready = true
+        emit()
+      } else refreshIfStale(false)     // back to the walk: re-walk when stale
+    },
+    everythingAvailable: everythingAvailable,
+    searchEverything: searchEverything
   }
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { createFileIndex: createFileIndex, MAX_ENTRIES: MAX_ENTRIES, STALE_AFTER_MS: STALE_AFTER_MS }
+  module.exports = { createFileIndex: createFileIndex, findEsExe: findEsExe, MAX_ENTRIES: MAX_ENTRIES, STALE_AFTER_MS: STALE_AFTER_MS }
 }

@@ -182,6 +182,24 @@ test("settings rows format, filter and cycle", () => {
   assert.equal(SettingsView.find("setting:nope:nope"), null)
 })
 
+test("file search provider is a config setting with two values", () => {
+  const Schema = require("../../plugin/core/Schema.js")
+  assert.equal(Schema.validConfigValue("fileSearchProvider", "built-in"), true)
+  assert.equal(Schema.validConfigValue("fileSearchProvider", "everything"), true)
+  assert.equal(Schema.validConfigValue("fileSearchProvider", "locator"), false)
+  assert.equal(Schema.withConfigDefaults({}).fileSearchProvider, "built-in")
+  assert.equal(Schema.withConfigDefaults({ fileSearchProvider: "everything" }).fileSearchProvider, "everything")
+  const def = SettingsView.find("setting:config:fileSearchProvider")
+  assert.ok(def, "row exists")
+  assert.equal(def.scope, "config")
+  assert.equal(SettingsView.cycle(def, "built-in"), "everything")
+  assert.equal(SettingsView.cycle(def, "everything"), "built-in")
+  assert.equal(SettingsView.format(def, "built-in"), "Built-in Index")
+  assert.equal(SettingsView.format(def, "everything"), "Everything")
+  const rows = SettingsView.rowsFor({}, { fileSearchProvider: "everything" }, "provider")
+  assert.ok(rows.some(r => r.id === "setting:config:fileSearchProvider"), "searchable by label")
+})
+
 // ------------------------------------------------- backend integration
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "oma-cast-feat-"))

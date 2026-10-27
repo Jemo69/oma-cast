@@ -41,6 +41,10 @@ function setup(overrides) {
     iconSource: function() { return Promise.resolve("") }
   }
   const fileIndex = overrides.fileIndex || null
+  if (overrides.config) {
+    fs.mkdirSync(paths.config, { recursive: true })
+    fs.writeFileSync(paths.configFile, JSON.stringify(overrides.config))
+  }
   const backend = createBackend({ paths: paths, host: host, apps: apps, fileIndex: fileIndex }).start()
   return { backend, calls, paths, apps }
 }
@@ -145,6 +149,45 @@ test("a single-token app search finds the app, not path-only file hits", () => {
   const shot = backend.callSync("rootSearch.search", { query: "screenshot", view: null, filter: "all" })
   const sres = shot.data.find(function(s) { return s.id === "results" })
   assert.ok(sres.rows.some(function(r) { return r.title === "Snipping Tool" }), "Snipping Tool ranks")
+  backend.dispose()
+})
+
+test("the Files section can come from Everything, falling back to the walk", () => {
+  const esPool = [
+    { p: "D:/Vault/report-q3.txt", n: "report-q3.txt", d: false, m: 9, nl: "report-q3.txt", pl: "d:/vault/report-q3.txt" }
+  ]
+  const esCalls = []
+  let esAnswer = esPool
+  let provided = null
+  const { backend, paths } = setup({
+    config: { fileSearchProvider: "everything" },
+    fileIndex: {
+      entries: [
+        { p: "C:/Users/u/Documents/notes.txt", n: "notes.txt", d: false, m: 2 }
+      ],
+      ready: true, loading: false, lastIndexedAt: Date.now(),
+      start: function() {}, refreshIfStale: function() {}, on: function() {},
+      setProvider: function(v) { provided = v },
+      searchEverything: function(q, limit) { esCalls.push([q, limit]); return esAnswer }
+    }
+  })
+  // Everything mode: the live pool feeds Files, ranked by the same ranker.
+  const r = backend.callSync("rootSearch.search", { query: "report-q3", view: null, filter: "all" })
+  assert.equal(r.ok, true)
+  assert.deepEqual(esCalls, [["report-q3", 100]])
+  const files = r.data.find(function(s) { return s.id === "files" })
+  assert.ok(files && files.rows.some(function(row) { return row.title === "report-q3.txt" }), "Everything hit surfaces")
+  // A dead Everything answers null: the walk pool serves that query.
+  esAnswer = null
+  const r2 = backend.callSync("rootSearch.search", { query: "notes", view: null, filter: "all" })
+  const files2 = r2.data.find(function(s) { return s.id === "files" })
+  assert.ok(files2 && files2.rows.some(function(row) { return row.title === "notes.txt" }), "walk fallback serves")
+  // The setting row flips the provider live: config file + setProvider.
+  const a = backend.callSync("rootSearch.performAction", { id: "setting:config:fileSearchProvider", action: "open", query: "", confirmed: true })
+  assert.equal(a.ok, true)
+  assert.equal(a.data.toast.title, "File Search Provider: Built-in Index")
+  assert.equal(provided, "built-in")
+  assert.equal(JSON.parse(fs.readFileSync(paths.configFile, "utf8")).fileSearchProvider, "built-in")
   backend.dispose()
 })
 

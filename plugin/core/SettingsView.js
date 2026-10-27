@@ -38,7 +38,9 @@ var DEFS = [
   { scope: "config", key: "workHoursPerDay", label: "Work Hours per Day", hint: "Calculator: work-day conversions",
     type: "number", presets: [4, 6, 8, 10] },
   { scope: "config", key: "fileSearchIncludeHidden", label: "File Search: Include Hidden", hint: "Dotfiles and hidden files in the index",
-    type: "bool" }
+    type: "bool" },
+  { scope: "config", key: "fileSearchProvider", label: "File Search Provider", hint: "Built-in walks your folders; Everything queries voidtools Everything (install it, keep it running) across all drives instantly",
+    type: "enum", choices: ["built-in", "everything"], titles: { "built-in": "Built-in Index", "everything": "Everything" } }
 ]
 
 function valueOf(def, general, config) {

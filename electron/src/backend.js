@@ -335,6 +335,7 @@ function createBackend(opts) {
     // re-applies the HKCU Run login item (app.setLoginItemSettings). [D]
     if ((key === "hotkey" || key === "openAtLogin") && host.configChanged) host.configChanged()
     if (key === "fileSearchIncludeHidden" && fileIndex && fileIndex.setIncludeHidden) fileIndex.setIncludeHidden(value)
+    if (key === "fileSearchProvider" && fileIndex && fileIndex.setProvider) fileIndex.setProvider(value)
     // The renderer repaints (theme / font / geometry come from config).
     emit("settings.configChanged", { key: key, value: value })
   }
@@ -656,7 +657,16 @@ function createBackend(opts) {
           var fq = query.trim()
           if (ctx.filter === "all" && fq.length >= 2 && fileIndex && fileIndex.ready) {
             var pathLike = /[\/\\~:]/.test(fq) || fq.split(/\s+/).length > 1
-            var matches = FileSearch.match(fileIndex.entries, fq, { limit: 30, nameOnly: !pathLike })
+            // Everything mode: Everything generates candidates system-wide
+            // and instantly; the same ranker tiers them (nameOnly included).
+            // A dead Everything (not installed/running) answers null and
+            // the walk pool serves that query instead. [D]
+            var pool = fileIndex.entries
+            if (config.fileSearchProvider === "everything" && fileIndex.searchEverything) {
+              var esPool = fileIndex.searchEverything(fq, 100)
+              if (esPool) pool = esPool
+            }
+            var matches = FileSearch.match(pool, fq, { limit: 30, nameOnly: !pathLike })
             if (matches.length > 0) {
               var fileSection = { id: "files", title: "Files", rows: matches.map(function(m) { return toRow(FileSearch.candidate(m.entry)) }) }
               var at = -1, fb = -1

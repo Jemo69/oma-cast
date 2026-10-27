@@ -76,6 +76,7 @@ var backend = backendLib.createBackend({
     roots: fileRoots,
     home: paths.home,
     includeHidden: !!config.fileSearchIncludeHidden,
+    provider: config.fileSearchProvider,
     cachePath: path.join(paths.cache, "file-index.json")
   }),
   // Everything launched from our own exe (main, GPU, renderer) stays out
