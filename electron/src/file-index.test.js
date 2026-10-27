@@ -3,26 +3,32 @@
 // no Windows — the assertions must hold on the Linux CI too). [D]
 const test = require("node:test")
 const assert = require("node:assert/strict")
+const path = require("node:path")
 const { createFileIndex, findEsExe } = require("./file-index")
 
+// Expected paths go through path.join: on Windows the candidates carry
+// backslashes, so forward-slash literals only ever passed on Linux. [D]
 test("findEsExe checks both install dirs, then PATH", () => {
   const tried = []
+  const install = path.join("C:/PF", "Everything", "es.exe")
+  const onPath = path.join("C:/Tools", "es.exe")
   const found = findEsExe({
     env: (k) => (k === "ProgramFiles" || k === "ProgramFiles(x86)") ? "C:/PF" : "",
-    existsSync: (p) => { tried.push(p); return p === "C:/Tools/es.exe" },
-    runWhere: () => "C:/Tools/es.exe\r\n"
+    existsSync: (p) => { tried.push(p); return p === onPath },
+    runWhere: () => onPath + "\r\n"
   })
-  assert.ok(tried.includes("C:/PF/Everything/es.exe"), "install dir probed: " + tried)
-  assert.equal(found, "C:/Tools/es.exe")
+  assert.ok(tried.includes(install), "install dir probed: " + tried)
+  assert.equal(found, onPath)
 })
 
 test("findEsExe prefers the install dir over PATH", () => {
+  const install = path.join("C:/PF", "Everything", "es.exe")
   const found = findEsExe({
     env: (k) => (k === "ProgramFiles") ? "C:/PF" : "",
     existsSync: () => true,
     runWhere: () => { throw new Error("must not reach PATH") }
   })
-  assert.equal(found, "C:/PF/Everything/es.exe")
+  assert.equal(found, install)
 })
 
 test("findEsExe answers null with nothing anywhere", () => {
