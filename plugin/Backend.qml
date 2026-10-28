@@ -394,6 +394,7 @@ Item {
         var sections
         if (view && view.kind === "menu") sections = RootSearch.submenuSections(backend.candidates, view.menuId, query, ctx, backend.deps)
         else if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
+        else if (view && view.kind === "web-search") sections = RootSearch.webSearchSections(view.engine, query)
         else {
           ctx.filter = String(data && data.filter || "all")
           if (query.trim() && ctx.filter === "all") ctx.calculation = backend.calculate(query)
@@ -407,6 +408,12 @@ Item {
         var rowId = String(data && data.id || "")
         if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
+        if (rowId.indexOf("web-search:") === 0) {
+          var engine = "fallback:" + rowId.slice("web-search:".length)
+          var fbEngine = RootSearch.engineFallback(engine)
+          if (!fbEngine) throw new Error("Unknown command " + rowId)
+          return RootSearch.actionsFor({ kind: "web-search", title: fbEngine.title })
+        }
         var candidate = backend.decorated(rowId)
         if (!candidate) {
           var fallback = RootSearch.FALLBACKS.filter(function(f) { return f.id === data.id })[0]
@@ -425,6 +432,12 @@ Item {
         if (rowId.indexOf("calculator-history:") === 0) {
           var entry = backend.historyEntry(rowId)
           return entry ? RootSearch.aboutFor(RootSearch.historyCandidate(entry, nowMs), nowMs) : []
+        }
+        if (rowId.indexOf("web-search:") === 0) {
+          var engine2 = "fallback:" + rowId.slice("web-search:".length)
+          var webCand = RootSearch.webSearchCandidate(engine2, data.query)
+          if (!webCand) throw new Error("Unknown command " + rowId)
+          return RootSearch.aboutFor(webCand, nowMs)
         }
         var candidate = backend.decorated(rowId)
         if (!candidate) {
@@ -447,6 +460,17 @@ Item {
             return { pending: true }
           }
           Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(fallback, data.query)])
+          return { close: true }
+        }
+        // A pushed web search runs the engine's URL template against the view query.
+        if (data && String(data.id).indexOf("web-search:") === 0) {
+          var engine3 = "fallback:" + String(data.id).slice("web-search:".length)
+          var fb3 = RootSearch.engineFallback(engine3)
+          if (!fb3) throw new Error("Unknown command " + data.id)
+          if (!String(data.query || "").trim()) throw new Error("Type a query first")
+          var builtinId = RootSearch.builtinIdForEngine(engine3)
+          if (backend.candidatesById[builtinId]) backend.recordVisit(builtinId, data.query)
+          Util.execArgv(["omarchy-launch-browser", RootSearch.fallbackUrl(fb3, data.query)])
           return { close: true }
         }
         // The calculator row is the query itself, evaluated again.

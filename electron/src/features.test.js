@@ -13,16 +13,20 @@ const { createFileIndex } = require("./file-index")
 const { createBackend } = require("./backend")
 
 // ---------------------------------------------------------------- unduck
-test("unduck is a fallback row and a quicklink with the {query} contract", () => {
+test("unduck is a fallback row and a pushed search view with the {query} contract", () => {
   const unduck = RS.FALLBACKS.find(f => f.id === "fallback:unduck")
   assert.ok(unduck, "fallback present")
   assert.equal(RS.fallbackUrl(unduck, "hello world"), "https://unduck.link?q=hello%20world")
   assert.equal(unduck.icon.codePointAt(0), 0xf0ac)          // nf-fa-globe
   const cmd = RS.BUILTINS.find(b => b.id === "builtin:unduck-search")
   assert.ok(cmd, "quicklink present")
-  assert.equal(cmd.run.url, "https://unduck.link?q={query}")
-  assert.deepEqual(cmd.arguments, [{ name: "query", placeholder: "Query", required: true }])
+  assert.equal(cmd.run.push.kind, "web-search")
+  assert.equal(cmd.run.push.engine, "fallback:unduck")
+  assert.deepEqual(cmd.arguments || [], [], "no inline pill arguments")
   assert.ok(cmd.keywords.includes("unduck"))
+  const sections = RS.webSearchSections("fallback:unduck", "hello world")
+  assert.equal(sections[0].rows[0].candidate.id, "web-search:unduck")
+  assert.equal(RS.fallbackUrl(RS.engineFallback("fallback:unduck"), "hello world"), "https://unduck.link?q=hello%20world")
 })
 
 test("Settings and Kill Process exist as always-on root commands", () => {
@@ -45,8 +49,8 @@ test("power commands: shutdown/restart confirm, sleep does not", () => {
   assert.equal(RS.confirmationFor("builtin:shutdown", "copy-path"), null)
 
   const builtins = Object.fromEntries(RS.BUILTINS.filter(b => b.run && b.run.power).map(b => [b.id, b.run]))
-  assert.deepEqual(builtins["builtin:shutdown"], { power: "shutdown", delay: 15 })
-  assert.deepEqual(builtins["builtin:restart"], { power: "restart", delay: 15 })
+  assert.deepEqual(builtins["builtin:shutdown"], { power: "shutdown" })
+  assert.deepEqual(builtins["builtin:restart"], { power: "restart" })
   assert.deepEqual(builtins["builtin:sleep"], { power: "sleep" })
   assert.equal(RS.BUILTINS.find(b => b.id === "builtin:sleep").glyph.codePointAt(0), 0xf186)
   assert.equal(RS.BUILTINS.find(b => b.id === "builtin:restart").glyph.codePointAt(0), 0xf021)
@@ -398,7 +402,7 @@ test("backend: Windows Settings leads the Settings view and opens a page", () =>
   backend.dispose()
 })
 
-test("backend: shutdown schedules with a cancellable toast, sleep closes", () => {
+test("backend: power actions fire immediately and close", () => {
   const { backend, calls } = setup()
 
   // Unconfirmed → the destructive alert.
@@ -406,20 +410,22 @@ test("backend: shutdown schedules with a cancellable toast, sleep closes", () =>
   assert.equal(confirm.data.confirm.destructive, true)
   assert.deepEqual(calls.power, [])
 
-  // Confirmed → shutdown.exe /s /t 15 scheduled, toast carries Cancel.
+  // Confirmed → shutdown.exe /s /t 0, window closes with a HUD line.
   const sd = backend.callSync("rootSearch.performAction", { id: "builtin:shutdown", action: "open", query: "", confirmed: true })
-  assert.equal(sd.data.toast.title, "Shut Down in 15 seconds")
-  assert.deepEqual(calls.power, [["shutdown", 15]])
-  const cancel = sd.data.toast.actions.find(a => a.id === "cancel-power")
-  assert.equal(cancel.call.method, "system.cancelPowerShutdown")
-  const cancelled = backend.callSync(cancel.call.method, null)
+  assert.equal(sd.data.close, true)
+  assert.equal(sd.data.hud, "Shutting down…")
+  assert.deepEqual(calls.power, [["shutdown", 0]])
+
+  // Restart uses /r, same immediate close.
+  const rs = backend.callSync("rootSearch.performAction", { id: "builtin:restart", action: "open", query: "", confirmed: true })
+  assert.equal(rs.data.close, true)
+  assert.equal(rs.data.hud, "Restarting…")
+  assert.deepEqual(calls.power[1], ["restart", 0])
+
+  // Legacy Cancel entrypoint still answers (old toasts call it).
+  const cancelled = backend.callSync("system.cancelPowerShutdown", null)
   assert.equal(cancelled.ok, true)
   assert.equal(calls.cancelPower, 1)
-
-  // Restart uses /r with the same schedule.
-  const rs = backend.callSync("rootSearch.performAction", { id: "builtin:restart", action: "open", query: "", confirmed: true })
-  assert.equal(rs.data.toast.title, "Restart in 15 seconds")
-  assert.deepEqual(calls.power[1], ["restart", 15])
 
   // Sleep: no confirmation, closes the window with a HUD line.
   const sl = backend.callSync("rootSearch.performAction", { id: "builtin:sleep", action: "open", query: "", confirmed: false })

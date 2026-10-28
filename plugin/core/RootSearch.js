@@ -10,8 +10,10 @@ var FALLBACKS = [
   { id: "fallback:agent", title: "Ask default agent", icon: "󰚩", subtitle: "New terminal session · Ctrl+Alt+Enter" }
 ]
 
-// Web searches as root commands with an inline argument pill (ref 04 §2.2
-// "inline argument inputs"; Raycast ships these as quicklinks) [D].
+// Web searches as root commands that push a dedicated search view with a
+// full-width query bar (like Settings), instead of an inline argument pill.
+// The pill forced the query into a ~200 px box after the root text; the
+// pushed view gives the query the whole header. [D]
 function webSearch(fallback, keywords) {
   return {
     id: "builtin:" + fallback.id.slice("fallback:".length) + "-search",
@@ -19,9 +21,51 @@ function webSearch(fallback, keywords) {
     subtitle: "Quicklink",
     glyph: fallback.icon,
     keywords: keywords,
-    arguments: [{ name: "query", placeholder: "Query", required: true }],
-    run: { url: fallback.url }
+    run: { push: { kind: "web-search", engine: fallback.id, title: fallback.title } }
   }
+}
+
+// The fallback behind a web-search engine id ("fallback:google", …).
+function engineFallback(engine) {
+  for (var i = 0; i < FALLBACKS.length; i++) if (FALLBACKS[i].id === engine) return FALLBACKS[i]
+  return null
+}
+
+// The builtin command id that pushes a given engine (for frecency).
+function builtinIdForEngine(engine) {
+  return "builtin:" + String(engine || "").slice("fallback:".length) + "-search"
+}
+
+// One live row for a pushed web-search view: the engine as the title, the
+// typed query as the subtitle. The id namespace ("web-search:*") is
+// separate from the root fallback rows ("fallback:*") so the two never
+// share selection or frecency. [D]
+function webSearchCandidate(engine, query) {
+  var f = engineFallback(engine)
+  if (!f) return null
+  var q = String(query === undefined || query === null ? "" : query).trim()
+  return {
+    id: "web-search:" + String(engine).slice("fallback:".length),
+    type: "command",
+    kind: "web-search",
+    title: f.title,
+    subtitle: q,
+    typeLabel: "Search",
+    glyph: f.icon,
+    engine: engine,
+    url: f.url,
+    rootSearch: { when: "always" }
+  }
+}
+
+// Sections for a pushed web-search view: a single row while the query is
+// non-empty, nothing while it is empty (the empty state invites typing).
+function webSearchSections(engine, query) {
+  var q = String(query === undefined || query === null ? "" : query).trim()
+  if (!q) return []
+  var c = webSearchCandidate(engine, query)
+  if (!c) return []
+  return [{ id: "results", title: "", rows: [{ candidate: c, record: null }] }]
 }
 
 var BUILTINS = [
@@ -78,16 +122,16 @@ var BUILTINS = [
     rootSearch: { when: "always" }
   },
   // Windows power actions (the Omarchy system actions' equivalent).
-  // shutdown/restart schedule with a cancellable window (the toast's
-  // Cancel runs system.cancelPowerShutdown); sleep fires once the
-  // window has unmap. [D]
+  // All three fire immediately once the destructive confirm (shutdown/
+  // restart) or the row action (sleep) passes; the window closes first.
+  // [D]
   {
     id: "builtin:shutdown",
     title: "Shut Down",
     subtitle: "Turn off this PC",
     glyph: "",                     // nf-fa-power-off
     keywords: ["shutdown", "power off", "turn off", "switch off"],
-    run: { power: "shutdown", delay: 15 },
+    run: { power: "shutdown" },
     rootSearch: { when: "always" }
   },
   {
@@ -96,7 +140,7 @@ var BUILTINS = [
     subtitle: "Reboot this PC",
     glyph: "",                     // nf-fa-refresh
     keywords: ["restart", "reboot", "reboot pc"],
-    run: { power: "restart", delay: 15 },
+    run: { power: "restart" },
     rootSearch: { when: "always" }
   },
   {
@@ -375,7 +419,8 @@ function actionsFor(candidate) {
     case "omarchy-action": primary = { id: "open", title: "Run", icon: "" }; break
     case "omarchy-menu":
     case "omarchy-link": primary = { id: "open", title: "Open Menu", icon: "" }; break
-    case "fallback": primary = { id: "open", title: candidate.title, icon: "" }; break
+    case "fallback":
+    case "web-search": primary = { id: "open", title: candidate.title, icon: "" }; break
     default: primary = { id: "open", title: "Open Command", icon: "" }
   }
   primary.shortcut = "↵"
@@ -384,7 +429,7 @@ function actionsFor(candidate) {
 
   if (candidate.kind && candidate.kind.indexOf("omarchy-") === 0)
     list.push({ id: "open-in-omarchy-menu", title: "Open in Omarchy Menu", shortcut: "Ctrl ↵", section: "primary", icon: "" })
-  if (candidate.kind === "fallback") return list
+  if (candidate.kind === "fallback" || candidate.kind === "web-search") return list
 
   if (candidate.kind === "app") list.push({ id: "copy-id", title: "Copy Desktop ID", shortcut: "Ctrl Shift C", section: "copy", icon: "" })
   if (candidate.kind === "omarchy-action") list.push({ id: "copy-command", title: "Copy Command", shortcut: "Ctrl Shift C", section: "copy", icon: "" })
@@ -475,6 +520,12 @@ function aboutFor(c, nowMs) {
     add("Saved", c.typeLabel)
     return rows
   }
+  if (c.kind === "web-search") {
+    add("Query", c.subtitle)
+    add("URL", c.url)
+    add("ID", c.id)
+    return rows
+  }
   add("Title", c.title)
   add("Type", c.typeLabel)
   if (c.kind !== "fallback") add("Location", c.subtitle)
@@ -510,6 +561,10 @@ if (typeof module !== "undefined") {
     calculatorCandidate: calculatorCandidate,
     historyCandidate: historyCandidate,
     historySections: historySections,
+    engineFallback: engineFallback,
+    builtinIdForEngine: builtinIdForEngine,
+    webSearchCandidate: webSearchCandidate,
+    webSearchSections: webSearchSections,
     decorate: decorate,
     rootSections: rootSections,
     submenuSections: submenuSections,

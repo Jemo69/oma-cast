@@ -150,14 +150,26 @@ test("fallback URLs encode the query", () => {
   assert.equal(RS.fallbackUrl(RS.FALLBACKS[0], " a&b c "), "https://www.google.com/search?q=a%26b%20c")
 })
 
-test("web searches take an inline argument", () => {
+test("web searches push a dedicated search view with a full query bar", () => {
   const google = results("google")[0].rows[0].candidate
   assert.equal(google.id, "builtin:google-search")
-  assert.deepEqual(google.arguments.map((a) => a.name), ["query"])
-  assert.equal(RS.missingArgument(google.arguments, {}), 0)
-  assert.equal(RS.missingArgument(google.arguments, { query: " a b " }), -1)
-  assert.equal(RS.fillArguments(google.run.url, { query: " a&b " }), "https://www.google.com/search?q=a%26b")
+  assert.deepEqual(google.arguments || [], [], "no inline pill arguments")
+  assert.equal(google.run.push.kind, "web-search")
+  assert.equal(google.run.push.engine, "fallback:google")
   assert.equal(results("ddg")[0].rows[0].candidate.id, "builtin:duckduckgo-search")
+  // The pushed view: empty query shows nothing, a typed query yields one row.
+  assert.deepEqual(RS.webSearchSections("fallback:google", ""), [])
+  assert.deepEqual(RS.webSearchSections("fallback:google", "   "), [])
+  const sections = RS.webSearchSections("fallback:google", "hello world")
+  assert.equal(sections.length, 1)
+  const row = sections[0].rows[0].candidate
+  assert.equal(row.id, "web-search:google")
+  assert.equal(row.kind, "web-search")
+  assert.equal(row.title, "Search Google")
+  assert.equal(row.subtitle, "hello world")
+  assert.equal(RS.fallbackUrl(RS.engineFallback("fallback:google"), "hello world"), "https://www.google.com/search?q=hello%20world")
+  assert.equal(RS.builtinIdForEngine("fallback:duckduckgo"), "builtin:duckduckgo-search")
+  assert.deepEqual(RS.actionsFor(row).map((a) => a.id), ["open"])
 })
 
 test("the root filter narrows by type and drops calculator and fallbacks", () => {

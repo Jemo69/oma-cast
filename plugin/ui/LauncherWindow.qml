@@ -81,6 +81,7 @@ PanelWindow {
   readonly property string placeholder: window.view.kind === "alias" ? "Type an alias, then press ↵"
     : window.view.kind === "menu" ? "Search " + window.view.title + "…"
     : window.view.kind === "calculator-history" ? "Search calculations…"
+    : window.view.kind === "web-search" ? window.view.title + "…"
     : "Search for apps and commands…"
 
   readonly property int cardWidth: Math.min(px(750), width - Style.gapsOut * 2)
@@ -568,6 +569,7 @@ PanelWindow {
       if (window.isActionPanelKey(ctrl, alt, shift, key)) { window.toggleActionPanel(); return true }
       if (ctrl && !shift && key === Qt.Key_P) { window.toggleDropdown(); return true }
       if (ctrl && !shift && key === Qt.Key_T) { window.toggleToastPanel(); return true }
+      if (window.view.kind === "web-search" && enter && !ctrl && !alt && !window.query.trim()) { window.showToast("failure", "Type a query first"); return true }
       if (enter && ctrl && shift) { window.performNth(2); return true }
       if (enter && ctrl) { window.performNth(1); return true }
       if (enter) { window.performNth(0); return true }
@@ -894,6 +896,7 @@ PanelWindow {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
           text: window.view.kind === "alias" ? window.view.title
+            : window.view.kind === "web-search" && !window.query ? window.view.title
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
             : (window.backend.ready ? "No results" : "Loading…")
           color: window.look.foreground
@@ -904,6 +907,7 @@ PanelWindow {
           anchors.horizontalCenter: parent.horizontalCenter
           textFormat: Text.PlainText
           text: window.view.kind === "alias" ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
+            : window.view.kind === "web-search" && !window.query ? "Type a query, then press ↵ to search."
             : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer." : ""
           visible: text.length > 0
           color: window.look.foreground

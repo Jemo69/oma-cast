@@ -42,15 +42,15 @@ test("host.power: shutdown and restart invoke shutdown.exe", () => {
     return { unref() {} }
   }
   try {
-    host.power("shutdown", 15)
+    host.power("shutdown", 0)
     assert.equal(spawned.length, 1)
     assert.equal(spawned[0].bin, "shutdown.exe")
-    assert.deepEqual(spawned[0].args, ["/s", "/t", "15", "/c", "oma-cast"])
+    assert.deepEqual(spawned[0].args, ["/s", "/t", "0", "/c", "oma-cast"])
 
-    host.power("restart", 10)
+    host.power("restart", 0)
     assert.equal(spawned.length, 2)
     assert.equal(spawned[1].bin, "shutdown.exe")
-    assert.deepEqual(spawned[1].args, ["/r", "/t", "10", "/c", "oma-cast"])
+    assert.deepEqual(spawned[1].args, ["/r", "/t", "0", "/c", "oma-cast"])
   } finally {
     childProcess.spawn = orig
   }

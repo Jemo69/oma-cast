@@ -445,6 +445,21 @@ function createBackend(opts) {
     if (apps) apps.launch(appId)
   }
 
+  // A pushed web-search row launches its engine with the view query. The
+  // builtin that pushed it earns the frecency visit (the old pill flow did
+  // recordVisit on the builtin too), so the engine rises with use. [D]
+  function webSearchAction(id, action, query) {
+    if (action !== "open") throw new Error("Unknown action " + action)
+    var engine = "fallback:" + String(id).slice("web-search:".length)
+    var fb = RootSearch.engineFallback(engine)
+    if (!fb) throw new Error("Unknown command " + id)
+    if (!String(query || "").trim()) throw new Error("Type a query first")
+    var builtinId = RootSearch.builtinIdForEngine(engine)
+    if (candidatesById[builtinId]) recordVisit(builtinId, query)
+    if (host.openExternal) host.openExternal(RootSearch.fallbackUrl(fb, query))
+    return { close: true }
+  }
+
   function performAction(data) {
     var id = String(data && data.id || "")
     var action = String(data && data.action || "open")
@@ -454,6 +469,7 @@ function createBackend(opts) {
     if (id.indexOf("winset:") === 0) return windowsSettingAction(id, action)
     if (id.indexOf("process:") === 0) return processAction(id, action)
     if (id.indexOf("file:") === 0) return fileAction(id, action)
+    if (id.indexOf("web-search:") === 0) return webSearchAction(id, action, query)
     var candidate = decorated(id)
     if (!candidate) throw new Error("Unknown command " + id)
 
@@ -465,19 +481,13 @@ function createBackend(opts) {
           return { close: true }
         case "builtin":
           if (candidate.run.power) {
-            // Sleep closes the window first (host delays past the unmap);
-            // shutdown/restart stay open with a cancellable toast so the
-            // 15-second schedule can be aborted from Ctrl+T. No frecency
-            // for power actions — they must not crowd Suggestions. [D]
-            if (candidate.run.power === "sleep") {
-              if (host.power) host.power("sleep", 0)
-              return { close: true, hud: "Sleeping…" }
-            }
-            if (host.power) host.power(candidate.run.power, candidate.run.delay || 15)
-            var powerLabel = candidate.run.power === "restart" ? "Restart" : "Shut Down"
-            return { toast: { style: "success", title: powerLabel + " in " + (candidate.run.delay || 15) + " seconds",
-              actions: [{ id: "cancel-power", title: "Cancel " + powerLabel, done: powerLabel + " cancelled",
-                call: { method: "system.cancelPowerShutdown", data: null } } ] } }
+            // All power actions fire immediately and close the window
+            // first (sleep delays past the unmap; shutdown/restart run
+            // shutdown.exe /t 0). No frecency for power actions — they
+            // must not crowd Suggestions. [D]
+            var powerHud = { shutdown: "Shutting down…", restart: "Restarting…", sleep: "Sleeping…" }
+            if (host.power) host.power(candidate.run.power, 0)
+            return { close: true, hud: powerHud[candidate.run.power] || "Done" }
           }
           if (candidate.run.url) {
             var values = (data && data.arguments) || {}
@@ -571,7 +581,8 @@ function createBackend(opts) {
         }
       },
       getPaths: function() { return paths },
-      // The toast's Undo for scheduled shutdown/restart (shutdown /a).
+      // Kept for old toasts: Cancel used to abort a scheduled
+      // shutdown/restart (shutdown /a); power actions are immediate now.
       cancelPowerShutdown: function() { if (host.cancelPower) host.cancelPower(); return null }
     })
 
@@ -643,6 +654,7 @@ function createBackend(opts) {
           }).map(processCandidate)
           sections = prows.length ? [{ id: "processes", title: "", rows: prows.map(toRow) }] : []
         } else if (view && view.kind === "calculator-history") sections = RootSearch.historySections(calculatorStore.doc.history, query, ctx.nowMs, Calculator.filterHistory)
+        else if (view && view.kind === "web-search") sections = RootSearch.webSearchSections(view.engine, query)
         else {
           ctx.filter = String(data && data.filter || "all")
           if (query.trim() && ctx.filter === "all") ctx.calculation = calculate(query)
@@ -691,6 +703,11 @@ function createBackend(opts) {
         if (rowId === "builtin:windows-settings") return [{ id: "open", title: "Open Windows Settings", shortcut: "↵", section: "primary", icon: "\uf17a" }]
         if (rowId.indexOf("process:") === 0) return actionsForProcess(processRow(String(rowId).slice("process:".length)))
         if (rowId.indexOf("file:") === 0) return FileSearch.actionsForFile()
+        if (rowId.indexOf("web-search:") === 0) {
+          var wfb = RootSearch.engineFallback("fallback:" + rowId.slice("web-search:".length))
+          if (!wfb) throw new Error("Unknown command " + rowId)
+          return RootSearch.actionsFor({ kind: "web-search", title: wfb.title })
+        }
         if (rowId === RootSearch.CALCULATOR_ID) return RootSearch.actionsFor({ kind: "calculator" })
         if (rowId.indexOf("calculator-history:") === 0) return RootSearch.actionsFor({ kind: "calculator-history" })
         var candidate = decorated(rowId)
@@ -743,6 +760,12 @@ function createBackend(opts) {
           if (hit && hit.m) infoRows.push({ label: "Modified", value: new Date(hit.m).toLocaleString() })
           return infoRows
         }
+        if (rowId.indexOf("web-search:") === 0) {
+          var weng = "fallback:" + rowId.slice("web-search:".length)
+          var wcand = RootSearch.webSearchCandidate(weng, data.query)
+          if (!wcand) throw new Error("Unknown command " + rowId)
+          return RootSearch.aboutFor(wcand, nowMs())
+        }
         var now2 = nowMs()
         if (rowId === RootSearch.CALCULATOR_ID) {
           var calc = calculate(String(data.query || ""))
@@ -783,6 +806,10 @@ function createBackend(opts) {
           }
           if (host.openExternal) host.openExternal(RootSearch.fallbackUrl(fallback, data.query))
           return { close: true }
+        }
+        // A pushed web search runs the engine's URL template against the view query.
+        if (data && String(data.id).indexOf("web-search:") === 0) {
+          return webSearchAction(String(data.id), String(data.action || "open"), String(data.query || ""))
         }
         // The calculator row is the query itself, evaluated again.
         if (data && data.id === RootSearch.CALCULATOR_ID) {

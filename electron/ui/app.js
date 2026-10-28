@@ -272,6 +272,7 @@ function placeholderText() {
   if (v.kind === "settings") return "Search settings…"
   if (v.kind === "processes") return "Search processes…"
   if (v.kind === "windows-settings") return "Search settings pages…"
+  if (v.kind === "web-search") return v.title + "…"
   return "Search for apps and commands…"
 }
 

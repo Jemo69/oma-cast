@@ -213,11 +213,13 @@ function renderList() {
     el.emptyGlyph.classList.toggle("omarchy-glyph", !isAlias)
     el.emptyGlyph.style.fontSize = px(28) + "px"
     el.emptyTitle.textContent = isAlias ? v.title
-      : (v.kind === "calculator-history" && !W.query ? "No Calculations Yet"
-        : (backend.ready && !backend.loading ? "No results" : "Loading…"))
+      : (v.kind === "web-search" && !W.query ? v.title
+        : (v.kind === "calculator-history" && !W.query ? "No Calculations Yet"
+          : (backend.ready && !backend.loading ? "No results" : "Loading…")))
     el.emptyHint.textContent = isAlias
       ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
-      : (v.kind === "calculator-history" && !W.query ? "Type a calculation in the root search, then copy or paste the answer." : "")
+      : (v.kind === "web-search" && !W.query ? "Type a query, then press \u21b5 to search."
+        : (v.kind === "calculator-history" && !W.query ? "Type a calculation in the root search, then copy or paste the answer." : ""))
     el.emptyHint.style.display = el.emptyHint.textContent ? "block" : "none"
   }
   el.list.style.display = v.kind === "alias" ? "none" : "block"

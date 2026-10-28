@@ -396,6 +396,7 @@ function handleKey(e) {
     if (isActionPanelKey(ctrl, alt, shift, kl)) { toggleActionPanel(); return true }
     if (ctrl && !shift && kl === "p") { toggleDropdown(); return true }
     if (ctrl && !shift && kl === "t") { toggleToastPanel(); return true }
+    if (view().kind === "web-search" && enter && !ctrl && !alt && !String(W.query || "").trim()) { showToast("failure", "Type a query first"); return true }
     if (enter && ctrl && shift) { performNth(2); return true }
     if (enter && ctrl) { performNth(1); return true }
     if (enter) { performNth(0); return true }

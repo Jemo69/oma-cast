@@ -59,9 +59,9 @@ module.exports = {
     } catch (e) {}
   },
 
-  // Windows power actions. shutdown/restart schedule 15 s out so the
-  // toast's Cancel (shutdown /a) can abort; sleep is delayed until the
-  // window has unmap. Uses PowerShell SetSuspendState('Suspend') so true
+  // Windows power actions. shutdown/restart fire immediately
+  // (shutdown.exe /t 0); sleep is delayed until the window has unmap.
+  // Uses PowerShell SetSuspendState('Suspend') so true
   // sleep is invoked even when hibernation is enabled (rundll32 SetSuspendState
   // erroneously hibernates due to a calling-convention mismatch). [D]
   power: function(kind, delay) {
