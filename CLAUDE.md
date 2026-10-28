@@ -121,7 +121,7 @@ Works:
   - Navigation bindings (`general.navigationBindings`): `emacs` moves down with Ctrl+N; `vim-motions` moves with Ctrl+J/K and puts the action panel on **Alt+K**. Set it with `oma-cast call settings.updateGeneralSettings '{"navigationBindings":"vim-motions"}'`.
   - **Ctrl+P** opens the root dropdown (All / Applications / Commands); emacs Ctrl+P = up only works inside popups.
   - **Ctrl+T** opens the toast's actions (Copy Error Message on failures, Undo after Disable Command). **Ctrl+Shift+K** opens the About panel for the selected row.
-  - **Argument pills:** "Search Google" / "Search DuckDuckGo" take a query in a pill after the search text (Tab in, Shift+Tab out).
+  - **Web search:** "Search Google" / "Search DuckDuckGo" / "Search unduck" push a dedicated view with a full-width query bar (like Settings) — type the query there, ↵ searches. No inline pills.
   - **Alerts:** Shut Down, Restart, Log Out and Delete All Entries ask first (↵ confirms, Esc cancels). `oma-cast run` skips the alert.
 - **Feedback:** toasts in the footer, a HUD through Omarchy's OSD when the window closes, and a 2 px loading bar while guards and providers refresh (on every open, about 250 ms in the background).
 - **Window behaviour:**
@@ -175,6 +175,8 @@ Windows-port additions (2026-10-25, user-driven): **file search** (`FileSearch.j
 **0.2.6 (2026-10-27):** missing-apps coverage. The scan only walked Start Menu Programs + Desktops plus Store rows, so registered exes with no shortcut anywhere (portable tools, dev-tool binaries, browsers) were invisible. It now walks the Start Menu roots (stray top-level links count) and appends the App Paths registry (HKLM + HKCU, registry reads only — no COM, so they survive locked-down PowerShells), skipping an App Paths row whose exe a shortcut row already covers. Every scan also logs its entry count (`library refreshed` in main.log) next to the doctor's `applications:` line, so a short list is diagnosable.
 
 **0.2.7 (2026-10-27):** file search provider setting. The Settings view gains a **File Search Provider** row (↵ cycles Built-in Index ⇄ Everything): `everything` queries voidtools Everything through `es.exe` (`%ProgramFiles%\Everything`, then PATH; one sync spawn per query, 5 s cap) so Files goes system-wide and instant, while the same ranker — nameOnly guard included — tiers the hits. A dead Everything (not installed/running) answers null and that query falls back to the walk pool; the walk parks (no re-walk churn) while Everything serves, and resumes when you switch back.
+
+**0.2.8 (2026-10-28):** (1) **Web search without the pill** — Search Google / DuckDuckGo / unduck no longer take the query in a ~200 px inline pill after the root text (Tab in, Shift+Tab out); each builtin pushes a dedicated search view with a full-width query bar, like Settings (type there, ↵ searches, Esc pops). The pushed view shows one live row per query (`web-search:*`, separate from the root `fallback:*` rows), errors on empty ↵, and records the frecency visit on the builtin so engines rise with use. Root `Use "q" with…` fallbacks are unchanged. (2) **Power actions fire immediately** — Shut Down / Restart no longer schedule `shutdown /s|/r /t 15` with a cancellable toast (`shutdown /a`); like Sleep they close the window first and fire at once (`shutdown.exe /t 0`) with a HUD. `system.cancelPowerShutdown` stays for old toasts.
 
 Deviations from the original spec (SPEC §2.0 and the Phase 1 note in §12):
 - A Quickshell plugin instead of Tauri + Node; there's no NDJSON supervisor until Phase 5.
