@@ -41,11 +41,14 @@ function renderExtensionForm(container, rawForm, hooks) {
     if (hooks.onChange) hooks.onChange(id, v)
   }
 
+  var wraps = []
   form.items.forEach(function (it) {
     var wrap = document.createElement("div")
     wrap.className = "form-field"
     wrap.dataset.fieldId = it.id || ""
     wrap.dataset.kind = it.kind || ""
+    if (it.advanced) wrap.style.display = "none"
+    wraps.push({ wrap: wrap, advanced: !!it.advanced })
     if (it.title && it.kind !== "Checkbox" && it.kind !== "Separator") {
       var label = document.createElement("label")
       label.className = "form-label"
@@ -145,8 +148,15 @@ function renderExtensionForm(container, rawForm, hooks) {
     if (first) first.focus()
   }
 
+  // Advanced rows hide with display:none but stay in the DOM: skip
+  // them so arrow-key flow never lands on an invisible field. [D]
+  var showAdvanced = false
+  function visibleEls() {
+    return Array.prototype.slice.call(container.querySelectorAll("input, select, textarea"))
+      .filter(function(el) { return el.offsetParent !== null })
+  }
   function focusNext(direction) {
-    var els = Array.prototype.slice.call(container.querySelectorAll("input, select, textarea"))
+    var els = visibleEls()
     if (!els.length) return
     var at = els.indexOf(document.activeElement)
     var next = at < 0 ? (direction > 0 ? 0 : els.length - 1)
@@ -168,11 +178,26 @@ function renderExtensionForm(container, rawForm, hooks) {
     }
   }
 
+  if (wraps.some(function (w) { return w.advanced })) {
+    var toggle = document.createElement("button")
+    toggle.className = "form-advanced"
+    toggle.textContent = "Show advanced"
+    toggle.addEventListener("click", function () {
+      showAdvanced = !showAdvanced
+      toggle.textContent = showAdvanced ? "Hide advanced" : "Show advanced"
+      wraps.forEach(function (w) {
+        if (w.advanced) w.wrap.style.display = showAdvanced ? "" : "none"
+      })
+    })
+    container.appendChild(toggle)
+  }
+
   return {
     form: form,
     focusFirst: focusFirst,
     focusNext: focusNext,
     typeIntoFirst: typeIntoFirst,
+    get showAdvanced() { return showAdvanced },
     getValues: function () { return Object.assign({}, values) },
     submit: function () {
       var errs = core ? core.validateForm(values, form) : {}

@@ -46,6 +46,15 @@ t.test("validation catches required/invalid/min-max", function () {
   assert.deepEqual(F.validateForm({ a: "ok", f: "x", e: "2026-01-02" }, form), {})
 })
 
+t.test("advanced flag survives normalization", function () {
+  var form = F.normalizeForm({ items: [
+    { kind: "TextField", id: "a" },
+    { kind: "DatePicker", id: "b", advanced: true }
+  ] })
+  assert.equal(form.items[0].advanced, false)
+  assert.equal(form.items[1].advanced, true)
+})
+
 t.test("controlled values and applyChange", function () {
   assert.equal(F.controlledValue({ value: "v", eventCount: 3 }, "d"), "v")
   var form = F.normalizeForm({ items: [{ kind: "Checkbox", id: "d" }] })
