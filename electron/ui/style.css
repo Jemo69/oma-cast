@@ -547,7 +547,7 @@ html, body {
 /* Quick Capture editor (like the screenshot): a multiline note box —
    Enter is a newline, Ctrl+Enter saves — with a hint and a character
    counter underneath. */
-#captureform { overflow-y: auto; padding: 10px 12px; }
+#captureform { overflow-y: auto; padding: 10px 12px; color: var(--fg); }
 #captureinput {
   width: 100%; box-sizing: border-box;
   min-height: 180px;
