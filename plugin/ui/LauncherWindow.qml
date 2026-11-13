@@ -85,7 +85,6 @@ PanelWindow {
     : window.view.kind === "web-search" ? window.view.title + "…"
     : window.view.kind === "quick-capture" ? "Type a note, then press ↵ to capture…"
     : window.view.kind === "todoist" ? "Search tasks…"
-    : window.view.kind === "todoist-add" ? "Type a task, then press ↵ to add…"
     : window.view.kind === "setting-edit" ? "Type a folder path, then press ↵"
     : "Search for apps and commands…"
 
@@ -156,7 +155,10 @@ PanelWindow {
   function initAddForm() {
     window.addSubmitting = false
     addForm.setForm(Todoist.addFormDefinition())
-    Qt.callLater(function() { addForm.focusFirst() })
+    // First-field focus arrives via onLoaded; the callLater covers a
+    // form restored from cache with delegates already in place. [D]
+    addForm.focusRequested = true
+    Qt.callLater(function() { if (addForm.inputs.length) { addForm.focusRequested = false; addForm.focusFirst() } })
   }
   function submitAddForm(values) {
     if (window.addSubmitting) return
@@ -171,10 +173,10 @@ PanelWindow {
     // only unfocused keys land here: Enter submits, arrows move between
     // fields, stray typing goes to the first text field. [D]
     if (enter && !ctrl && !alt && !shift) { addForm.submit(); return true }
-    if (key === Qt.Key_Up && !ctrl && !alt) { addForm.focusNext(-1); return true }
-    if (key === Qt.Key_Down && !ctrl && !alt) { addForm.focusNext(1); return true }
+    if (key === Qt.Key_Up && !ctrl && !alt && !shift) { addForm.focusNext(-1); return true }
+    if (key === Qt.Key_Down && !ctrl && !alt && !shift) { addForm.focusNext(1); return true }
     if (window.isTyping(event)) { addForm.typeIntoFirst(event.text); return true }
-    if (key === Qt.Key_Backspace) { addForm.chompFirst(); return true }
+    if (key === Qt.Key_Backspace && !ctrl && !alt) { addForm.chompFirst(); return true }
     return false
   }
 
@@ -495,6 +497,10 @@ PanelWindow {
       var values = Object.assign({}, window.argValues)
       values[name] = (values[name] || "") + text
       window.argValues = values
+    } else if (window.view.kind === "todoist-add") {
+      // The global Ctrl+V steals the paste from focused fields, and the
+      // query bar is hidden in this view: insert into the form instead. [D]
+      addForm.pasteIntoFocused(text)
     } else {
       if (window.view.kind === "alias") text = text.replace(/\s/g, "")
       if (window.view.kind === "setting-edit") text = text.replace(/[\r\n\u2028\u2029]+/g, " ")
@@ -960,7 +966,6 @@ PanelWindow {
             : window.view.kind === "setting-edit" ? window.view.title
             : window.view.kind === "quick-capture" && !window.query ? window.view.title
             : window.view.kind === "todoist" && !window.query ? window.view.title
-            : window.view.kind === "todoist-add" && !window.query ? window.view.title
             : window.view.kind === "web-search" && !window.query ? window.view.title
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
             : (window.backend.ready ? "No results" : "Loading…")
@@ -975,7 +980,6 @@ PanelWindow {
             : window.view.kind === "setting-edit" ? "Empty uses the default Notes folder."
             : window.view.kind === "quick-capture" && !window.query ? "Type a note, then press ↵ or Ctrl+↵ to save it."
             : window.view.kind === "todoist" && !window.query ? "Type to filter tasks."
-            : window.view.kind === "todoist-add" && !window.query ? "Dates, #projects, @labels and p1–p4 are parsed."
             : window.view.kind === "web-search" && !window.query ? "Type a query, then press ↵ to search."
             : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer." : ""
           visible: text.length > 0

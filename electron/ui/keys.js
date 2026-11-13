@@ -141,7 +141,7 @@ function handleAddFormKey(e, enter, ctrl, alt, shift) {
     submitAddForm()
     return true
   }
-  if ((e.key === "ArrowUp" || e.key === "ArrowDown") && W.formHandler
+  if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.shiftKey && W.formHandler
       && !(inForm && (tag === "SELECT" || (tag === "INPUT" && t.type === "date")))) {
     W.formHandler.focusNext(e.key === "ArrowDown" ? 1 : -1)
     return true
@@ -317,6 +317,18 @@ function pasteClipboard() {
     W.argValues = Object.assign({}, W.argValues)
     W.argValues[name] = (W.argValues[name] || "") + text
     renderHeader()
+  } else if (view().kind === "todoist-add" && W.formHandler) {
+    // The capture listener steals Ctrl+V from focused inputs, and the
+    // query bar is an "Add Task" title in this view: insert caret-aware
+    // into the focused field, else append to the first text field. [D]
+    var t = document.activeElement
+    if (t && el.todoform.contains(t) && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) {
+      var canSelect = t.tagName === "TEXTAREA" || /^(text|password|search|tel|url)$/.test(t.type || "text")
+      var s = canSelect && t.selectionStart !== null ? t.selectionStart : t.value.length
+      var e2 = canSelect && t.selectionEnd !== null ? t.selectionEnd : t.value.length
+      t.value = t.value.slice(0, s) + text + t.value.slice(e2)
+      t.dispatchEvent(new Event("input", { bubbles: true }))
+    } else W.formHandler.typeIntoFirst(text)
   } else {
     if (view().kind === "alias") text = text.replace(/\s/g, "")
     if (view().kind === "setting-edit") text = text.replace(/[\r\n\u2028\u2029]+/g, " ")

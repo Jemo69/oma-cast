@@ -276,7 +276,6 @@ function placeholderText() {
   if (v.kind === "web-search") return v.title + "…"
   if (v.kind === "quick-capture") return "Type a note, then press ↵ to capture…"
   if (v.kind === "todoist") return "Search tasks…"
-  if (v.kind === "todoist-add") return "Type a task, then press ↵ to add…"
   if (v.kind === "setting-edit") return "Type a folder path, then press ↵"
   return "Search for apps and commands…"
 }

@@ -154,10 +154,25 @@ function renderExtensionForm(container, rawForm, hooks) {
     els[next].focus()
   }
 
+  // Unfocused global keys (paste, stray typing) reach the window with
+  // no field focused: put them in the first text field. [D]
+  function typeIntoFirst(text) {
+    for (var i = 0; i < form.items.length; i++) {
+      var it = form.items[i]
+      if (it.kind !== "TextField" && it.kind !== "PasswordField" && it.kind !== "TextArea") continue
+      setVal(it.id, String(values[it.id] || "") + String(text))
+      var box = container.querySelector('[data-field-id="' + it.id + '"] input')
+      if (box) box.value = String(values[it.id])
+      focusFirst()
+      return
+    }
+  }
+
   return {
     form: form,
     focusFirst: focusFirst,
     focusNext: focusNext,
+    typeIntoFirst: typeIntoFirst,
     getValues: function () { return Object.assign({}, values) },
     submit: function () {
       var errs = core ? core.validateForm(values, form) : {}

@@ -13,13 +13,20 @@ Column {
   property var values: ({})
   property var errors: ({})
   // Loaded field controls (those with forceActiveFocus), in item order,
-  // for focusFirst/focusNext keyboard flow.
+  // for focusFirst/focusNext keyboard flow, plus their field shapes for
+  // focus-aware paste. [D]
   property var inputs: []
+  property var inputFields: []
+  // Set by the host before setForm when the first field should take
+  // focus; consumed by onLoaded so no retry race remains. [D]
+  property bool focusRequested: false
   signal submitted(var values)
   signal fieldChanged(string fieldId, var value)
 
   function setForm(raw) {
     root.inputs = []
+    root.inputFields = []
+    root.focusRequested = false
     root.form = ExtForm.normalizeForm(raw)
     var v = ExtForm.initialValues(root.form)
     var out = {}
@@ -78,6 +85,43 @@ Column {
     return (root.errors && root.errors[id]) || ""
   }
 
+  function focusedField() {
+    for (var i = 0; i < root.inputFields.length; i++) {
+      if (root.inputFields[i].target.activeFocus) return root.inputFields[i].field
+    }
+    return null
+  }
+
+  function hasFieldFocus() {
+    return !!root.focusedField()
+  }
+
+  // Ctrl+V is stolen by the window key handler, so focused fields never
+  // see a native paste: insert into the focused value here instead. [D]
+  function pasteIntoFocused(text) {
+    var f = root.focusedField()
+    if (!f) { root.typeIntoFirst(text); return }
+    var t = String(text === undefined || text === null ? "" : text).replace(/[\r\n\u2028\u2029]+/g, " ")
+    if (!t) return
+    if (f.kind === "TagPicker" || f.kind === "FilePicker") {
+      var cur = Array.isArray(root.values[f.id]) ? root.values[f.id].slice() : []
+      var add = t.split(",").map(function (s) { return s.trim() }).filter(function (s) { return s !== "" })
+      for (var i = 0; i < add.length; i++) if (cur.indexOf(add[i]) < 0) cur.push(add[i])
+      root.setField(f.id, cur)
+      root.fieldChanged(f.id, cur)
+      return
+    }
+    if (f.kind === "Dropdown" || f.kind === "Checkbox" || f.kind === "Separator" || f.kind === "Description") {
+      root.typeIntoFirst(t)
+      return
+    }
+    var v = {}
+    for (var k in root.values) v[k] = root.values[k]
+    v[f.id] = String(root.values[f.id] || "") + t
+    root.values = v
+    root.fieldChanged(f.id, v[f.id])
+  }
+
   function submit() {
     var errs = ExtForm.validateForm(root.values, root.form)
     var out = {}
@@ -106,9 +150,15 @@ Column {
       onLoaded: {
         if (item) {
           item.field = field
-          var next = root.inputs.slice()
-          if (item.focusTarget) next.push(item.focusTarget)
-          root.inputs = next
+          if (item.focusTarget) {
+            root.inputs = root.inputs.slice().concat([item.focusTarget])
+            root.inputFields = root.inputFields.slice().concat([{ target: item.focusTarget, field: field }])
+            // First field in focuses it at once: no Loader/focus race. [D]
+            if (root.focusRequested && root.inputs.length === 1) {
+              root.focusRequested = false
+              item.focusTarget.forceActiveFocus()
+            }
+          }
         }
       }
     }
@@ -117,6 +167,7 @@ Column {
   Component {
     id: textFieldComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: input
       spacing: 2
@@ -137,6 +188,7 @@ Column {
   Component {
     id: textAreaComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: input
       spacing: 2
@@ -154,6 +206,7 @@ Column {
   Component {
     id: checkboxComp
     CheckBox {
+      width: root.width
       property var field
       property var focusTarget: box
       id: box
@@ -166,6 +219,7 @@ Column {
   Component {
     id: datePickerComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: input
       spacing: 2
@@ -187,6 +241,7 @@ Column {
   Component {
     id: dropdownComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: combo
       spacing: 2
@@ -207,12 +262,17 @@ Column {
           for (var i = 0; i < secs.length; i++) for (var j = 0; j < secs[i].items.length; j++) vals.push(String(secs[i].items[j].value))
           return vals
         }
-        model: titles()
-        Component.onCompleted: {
-          if (!field) return
+        // Reactive: Component.onCompleted runs before Loader assigns
+        // field, so an imperative sync there always exits early. The
+        // binding re-evaluates once field/values arrive; a user pick
+        // replaces the binding, so it never fights back. [D]
+        function syncedIndex() {
+          if (!field) return 0
           var at = optionValues().indexOf(String(root.values[field.id]))
-          if (at >= 0) currentIndex = at
+          return at >= 0 ? at : 0
         }
+        model: titles()
+        currentIndex: syncedIndex()
         onActivated: {
           if (!field) return
           var vals = optionValues()
@@ -224,6 +284,7 @@ Column {
   Component {
     id: tagPickerComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: input
       spacing: 2
@@ -249,6 +310,7 @@ Column {
   Component {
     id: filePickerComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: input
       spacing: 2
@@ -262,8 +324,8 @@ Column {
         onTextChanged: {
           if (!field) return
           var arr = text.split(",").map(function (s) { return s.trim() }).filter(function (s) { return s !== "" })
-          root.setField(field.id, arr)
-          root.fieldChanged(field.id, arr)
+          var cur = Array.isArray(root.values[field.id]) ? root.values[field.id] : []
+          if (String(arr) !== String(cur)) { root.setField(field.id, arr); root.fieldChanged(field.id, arr) }
         }
         onAccepted: root.submit()
       }
@@ -273,6 +335,7 @@ Column {
   Component {
     id: descriptionComp
     Column {
+      width: root.width
       property var field
       property var focusTarget: null
       Text { text: (field && field.title) || ""; textFormat: Text.PlainText; font.bold: true }
