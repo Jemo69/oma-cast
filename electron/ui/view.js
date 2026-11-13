@@ -197,6 +197,26 @@ function bindRowPointer(node, index) {
 
 function renderList() {
   gate.reset()
+  // The add view is a structured ExtensionForm (the editor card), not
+  // rows: it renders once per push and keeps its own input state. [D]
+  var isAddForm = view().kind === "todoist-add"
+  el.todoform.style.display = isAddForm ? "block" : "none"
+  if (isAddForm) {
+    var formKey = W.stack.length + ":todoist-add"
+    if (W.formKey !== formKey || !W.formHandler) {
+      W.formKey = formKey
+      W.addSubmitting = false
+      el.todoform.innerHTML = ""
+      W.formHandler = renderExtensionForm(el.todoform, Todoist.addFormDefinition(), {})
+      var btn = document.createElement("button")
+      btn.className = "form-submit"
+      btn.textContent = "Add Task \u21b5"
+      btn.addEventListener("mousedown", function(e) { e.stopPropagation() })
+      btn.addEventListener("click", function() { submitAddForm() })
+      el.todoform.appendChild(btn)
+      W.formHandler.focusFirst()
+    }
+  } else if (W.formKey) { W.formKey = null; W.formHandler = null }
   el.list.innerHTML = ""
   W.rows.forEach(function(row, index) {
     if (row.rowKind === "section") el.list.appendChild(sectionRowEl(row))
@@ -206,7 +226,7 @@ function renderList() {
 
   var v = view()
   var isEditor = v.kind === "alias" || v.kind === "setting-edit"
-  var emptyVisible = isEditor || W.rows.length === 0
+  var emptyVisible = (isEditor || W.rows.length === 0) && v.kind !== "todoist-add"
   el.empty.classList.toggle("visible", emptyVisible && !compact())
   if (emptyVisible) {
     var isAlias = v.kind === "alias"
@@ -218,21 +238,19 @@ function renderList() {
       : (isSettingEdit ? v.title
         : (v.kind === "quick-capture" && !W.query ? v.title
           : (v.kind === "todoist" && !W.query ? v.title
-            : (v.kind === "todoist-add" && !W.query ? v.title
-              : (v.kind === "web-search" && !W.query ? v.title
+            : (v.kind === "web-search" && !W.query ? v.title
                 : (v.kind === "calculator-history" && !W.query ? "No Calculations Yet"
-                  : (backend.ready && !backend.loading ? "No results" : "Loading…")))))))
+                  : (backend.ready && !backend.loading ? "No results" : "Loading…"))))))
     el.emptyHint.textContent = isAlias
       ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
       : (isSettingEdit ? "Empty uses the default Notes folder."
         : (v.kind === "quick-capture" && !W.query ? "Type a note, then press \u21b5 or Ctrl+\u21b5 to save it."
           : (v.kind === "todoist" && !W.query ? "Type to filter tasks."
-            : (v.kind === "todoist-add" && !W.query ? "Dates, #projects, @labels and p1–p4 are parsed."
-              : (v.kind === "web-search" && !W.query ? "Type a query, then press \u21b5 to search."
-            : (v.kind === "calculator-history" && !W.query ? "Type a calculation in the root search, then copy or paste the answer." : ""))))))
+            : (v.kind === "web-search" && !W.query ? "Type a query, then press \u21b5 to search."
+            : (v.kind === "calculator-history" && !W.query ? "Type a calculation in the root search, then copy or paste the answer." : "")))))
     el.emptyHint.style.display = el.emptyHint.textContent ? "block" : "none"
   }
-  el.list.style.display = isEditor ? "none" : "block"
+  el.list.style.display = (isEditor || v.kind === "todoist-add") ? "none" : "block"
   paintSelection()
 }
 

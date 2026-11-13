@@ -6,6 +6,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "../core/Agent.js" as Agent
 import "../core/RootSearch.js" as RootSearch
+import "../core/Todoist.js" as Todoist
 
 // Omarchy 4.0.x dropped qs.Ui.OverlayWindow; this is the same full-screen
 // overlay layer the shell's own emoji picker uses.
@@ -84,7 +85,6 @@ PanelWindow {
     : window.view.kind === "web-search" ? window.view.title + "…"
     : window.view.kind === "quick-capture" ? "Type a note, then press ↵ to capture…"
     : window.view.kind === "todoist" ? "Search tasks…"
-    : window.view.kind === "todoist-add" ? "Type a task, then press ↵ to add…"
     : window.view.kind === "setting-edit" ? "Type a folder path, then press ↵"
     : "Search for apps and commands…"
 
@@ -145,6 +145,39 @@ PanelWindow {
     window.stack = saved.concat([next])
     window.query = (next.kind === "alias" || next.kind === "setting-edit") ? (next.value || "") : ""
     window.rebuild(true)
+    if (next.kind === "todoist-add") window.initAddForm()
+  }
+
+  // The add view is a structured ExtensionForm (the editor card, like the
+  // screenshot): Description first, then Priority / dates / Recurrence /
+  // Tags, submitted as one POST /tasks. [D]
+  property bool addSubmitting: false
+  function initAddForm() {
+    window.addSubmitting = false
+    addForm.setForm(Todoist.addFormDefinition())
+    // First-field focus arrives via onLoaded; the callLater covers a
+    // form restored from cache with delegates already in place. [D]
+    addForm.focusRequested = true
+    Qt.callLater(function() { if (addForm.inputs.length) { addForm.focusRequested = false; addForm.focusFirst() } })
+  }
+  function submitAddForm(values) {
+    if (window.addSubmitting) return
+    window.addSubmitting = true
+    var r = window.backend.callSync("rootSearch.performAction", { id: RootSearch.TODO_ADD_ID, action: "submit", query: "", arguments: values })
+    if (!r.ok) { window.addSubmitting = false; window.showToast("failure", r.error); return }
+  }
+  function handleAddFormKey(event, enter, ctrl, shift, alt) {
+    var key = event.key
+    // Escape pops through handleEscape (runs before this branch).
+    // Focused fields accept their own keys (typing, Space, popups) so
+    // only unfocused keys land here: Enter submits, arrows move between
+    // fields, stray typing goes to the first text field. [D]
+    if (enter && !ctrl && !alt && !shift) { addForm.submit(); return true }
+    if (key === Qt.Key_Up && !ctrl && !alt && !shift) { addForm.focusNext(-1); return true }
+    if (key === Qt.Key_Down && !ctrl && !alt && !shift) { addForm.focusNext(1); return true }
+    if (window.isTyping(event)) { addForm.typeIntoFirst(event.text); return true }
+    if (key === Qt.Key_Backspace && !ctrl && !alt) { addForm.chompFirst(); return true }
+    return false
   }
 
   function pop() {
@@ -464,6 +497,10 @@ PanelWindow {
       var values = Object.assign({}, window.argValues)
       values[name] = (values[name] || "") + text
       window.argValues = values
+    } else if (window.view.kind === "todoist-add") {
+      // The global Ctrl+V steals the paste from focused fields, and the
+      // query bar is hidden in this view: insert into the form instead. [D]
+      addForm.pasteIntoFocused(text)
     } else {
       if (window.view.kind === "alias") text = text.replace(/\s/g, "")
       if (window.view.kind === "setting-edit") text = text.replace(/[\r\n\u2028\u2029]+/g, " ")
@@ -579,6 +616,8 @@ PanelWindow {
       return window.handlePopupKey(event, actionPanel, ctrl, alt)
     }
 
+    if (window.view.kind === "todoist-add") { return window.handleAddFormKey(event, enter, ctrl, shift, alt) }
+
     if (window.view.kind === "alias" || window.view.kind === "setting-edit") {
       if (enter) { if (window.view.kind === "alias") window.saveAlias(); else window.saveSettingEdit(); return true }
       if (key === Qt.Key_Space && window.view.kind === "alias") return true
@@ -590,7 +629,6 @@ PanelWindow {
       if (ctrl && !shift && key === Qt.Key_T) { window.toggleToastPanel(); return true }
       if (window.view.kind === "web-search" && enter && !ctrl && !alt && !window.query.trim()) { window.showToast("failure", "Type a query first"); return true }
       if (window.view.kind === "quick-capture" && enter && !shift && !alt && !window.query.trim()) { window.showToast("failure", "Type a note first"); return true }
-      if (window.view.kind === "todoist-add" && enter && !ctrl && !alt && !window.query.trim()) { window.showToast("failure", "Type a task first"); return true }
       if (window.view.kind === "quick-capture" && enter && ctrl && !shift && !alt) { window.perform("open"); return true }
       if (enter && ctrl && shift) { window.performNth(2); return true }
       if (enter && ctrl) { window.performNth(1); return true }
@@ -643,6 +681,8 @@ PanelWindow {
       if (method === "todoist.tasksChanged" && window.shown && !window.actionPanelOpen && !window.alert) window.rebuild(false)
       if ((method === "todoist.taskAdded" || method === "todoist.taskCompleted" || method === "todoist.taskDeleted") && window.shown) window.showToast("success", data.message)
       if (method === "todoist.error" && window.shown) window.showToast("failure", data.message)
+      if (method === "todoist.taskAdded" && window.view.kind === "todoist-add") { window.addSubmitting = false; window.pop() }
+      if (method === "todoist.error" && window.view.kind === "todoist-add") window.addSubmitting = false
     }
     // Exchange rates or zone offsets arrived: re-evaluate a calculation on screen.
     function onCalculatorRevisionChanged() { if (window.shown && !window.actionPanelOpen && window.query) window.rebuild(false) }
@@ -723,9 +763,9 @@ PanelWindow {
         x: lead.x + lead.width + window.px(12)
         width: Math.min(implicitWidth, header.queryRoom - (pills.visible ? pills.width + window.px(10) : 0))
         anchors.verticalCenter: parent.verticalCenter
-        text: window.query || (pills.visible ? "" : window.placeholder)
+        text: window.view.kind === "todoist-add" ? "Add Task" : (window.query || (pills.visible ? "" : window.placeholder))
         color: window.look.foreground
-        opacity: window.query ? 1 : 0.45
+        opacity: (window.query || window.view.kind === "todoist-add") ? 1 : 0.45
         font.family: window.look.fontFamily
         font.pixelSize: Math.round(Style.font.heading * 1.15 * window.zoom)
         elide: Text.ElideLeft
@@ -737,7 +777,7 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         x: queryText.x + (window.query ? Math.min(queryText.contentWidth, queryText.width) + Style.space(1) : 0)
         color: window.look.accent
-        visible: window.shown && !window.actionPanelOpen && window.argFocus < 0
+        visible: window.shown && !window.actionPanelOpen && window.argFocus < 0 && window.view.kind !== "todoist-add"
 
         SequentialAnimation on opacity {
           running: window.shown
@@ -891,7 +931,7 @@ PanelWindow {
         anchors.fill: parent
         anchors.topMargin: window.px(4)
         anchors.bottomMargin: window.px(4)
-        visible: window.view.kind !== "alias" && window.view.kind !== "setting-edit"
+        visible: window.view.kind !== "alias" && window.view.kind !== "setting-edit" && window.view.kind !== "todoist-add"
         clip: true
         model: rows
         boundsBehavior: Flickable.StopAtBounds
@@ -909,7 +949,7 @@ PanelWindow {
       Column {
         anchors.centerIn: parent
         spacing: window.px(8)
-        visible: window.view.kind === "alias" || window.view.kind === "setting-edit" || rows.count === 0
+        visible: (window.view.kind === "alias" || window.view.kind === "setting-edit" || rows.count === 0) && window.view.kind !== "todoist-add"
 
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
@@ -926,7 +966,6 @@ PanelWindow {
             : window.view.kind === "setting-edit" ? window.view.title
             : window.view.kind === "quick-capture" && !window.query ? window.view.title
             : window.view.kind === "todoist" && !window.query ? window.view.title
-            : window.view.kind === "todoist-add" && !window.query ? window.view.title
             : window.view.kind === "web-search" && !window.query ? window.view.title
             : window.view.kind === "calculator-history" && !window.query ? "No Calculations Yet"
             : (window.backend.ready ? "No results" : "Loading…")
@@ -941,7 +980,6 @@ PanelWindow {
             : window.view.kind === "setting-edit" ? "Empty uses the default Notes folder."
             : window.view.kind === "quick-capture" && !window.query ? "Type a note, then press ↵ or Ctrl+↵ to save it."
             : window.view.kind === "todoist" && !window.query ? "Type to filter tasks."
-            : window.view.kind === "todoist-add" && !window.query ? "Dates, #projects, @labels and p1–p4 are parsed."
             : window.view.kind === "web-search" && !window.query ? "Type a query, then press ↵ to search."
             : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer." : ""
           visible: text.length > 0
@@ -949,6 +987,49 @@ PanelWindow {
           opacity: 0.55
           font.family: window.look.fontFamily
           font.pixelSize: Math.round(Style.font.bodySmall * window.zoom)
+        }
+      }
+
+      Column {
+        anchors.fill: parent
+        anchors.topMargin: window.px(4)
+        anchors.bottomMargin: window.px(4)
+        spacing: window.px(10)
+        visible: window.view.kind === "todoist-add"
+
+        ExtensionForm {
+          id: addForm
+          width: parent.width
+          onSubmitted: function(values) { window.submitAddForm(values) }
+        }
+
+        Item {
+          width: parent.width
+          height: window.px(30)
+          Rectangle {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: addLabel.implicitWidth + window.px(32)
+            height: parent.height
+            radius: window.px(6)
+            color: window.look.accent
+            opacity: window.addSubmitting ? 0.5 : 1
+            Text {
+              id: addLabel
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: "Add Task \u21b5"
+              color: "white"
+              font.family: window.look.fontFamily
+              font.pixelSize: Math.round(Style.font.body * window.zoom)
+            }
+            MouseArea {
+              anchors.fill: parent
+              enabled: !window.addSubmitting
+              cursorShape: Qt.PointingHandCursor
+              onClicked: addForm.submit()
+            }
+          }
         }
       }
     }
