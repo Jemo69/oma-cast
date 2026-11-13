@@ -163,6 +163,35 @@ function submitAddForm() {
   if (!res.ok) { W.addSubmitting = false; showToast("failure", res.error); return }
 }
 
+// Quick Capture is a multiline editor (Enter = newline, like the
+// screenshot); only Ctrl+Enter saves. Focused keys edit the textarea
+// natively ("editor" passes them through); unfocused keys append like
+// the query bar and hand focus back to the editor. [D]
+function submitCapture() {
+  if (!String(W.query || "").trim()) { showToast("failure", "Type a note first"); return }
+  perform("open")
+}
+function handleCaptureKey(e, enter, ctrl, alt, shift) {
+  if (enter && ctrl && !shift && !alt) { submitCapture(); return true }
+  var t = document.activeElement
+  var focused = !!(t && el.captureinput && t === el.captureinput)
+  if (focused) {
+    // Empty-box Backspace pops like the query bar; everything else edits
+    // natively and syncs back through the input listener. [D]
+    if (e.key === "Backspace" && !W.query && !atRoot()) return false
+    if (enter && !ctrl) return "editor"
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "PageUp" || e.key === "PageDown") && !ctrl && !alt) return "editor"
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") return "editor"
+    if (e.key === "Backspace" || e.key === "Delete") return "editor"
+    if (isTyping(e)) return "editor"
+    return false
+  }
+  if (enter && !ctrl && !alt) { setQuery((W.query || "") + "\n"); try { el.captureinput.focus() } catch (err) {} return true }
+  if (isTyping(e)) { setQuery((W.query || "") + e.key); try { el.captureinput.focus() } catch (err) {} return true }
+  if (e.key === "Backspace" && !ctrl && !alt) { setQuery(String(W.query || "").slice(0, -1)); try { el.captureinput.focus() } catch (err) {} return true }
+  return false
+}
+
 function perform(actionId, index) {
   flushRebuild()
   if (index !== undefined && index >= 0) select(index)
@@ -309,6 +338,20 @@ function saveSettingEdit() {
 }
 
 function pasteClipboard() {
+  // Capture is multiline: keep newlines (normalized) and insert at the
+  // caret when the editor is focused, else append like the query bar. [D]
+  if (view().kind === "quick-capture") {
+    var kept = host.readText().replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[\u2028\u2029]+/g, "\n")
+    if (!kept) return
+    var t = document.activeElement
+    if (t && t === el.captureinput) {
+      var s = t.selectionStart !== null && t.selectionStart !== undefined ? t.selectionStart : t.value.length
+      var e2 = t.selectionEnd !== null && t.selectionEnd !== undefined ? t.selectionEnd : t.value.length
+      t.value = t.value.slice(0, s) + kept + t.value.slice(e2)
+      t.dispatchEvent(new Event("input", { bubbles: true }))
+    } else setQuery((W.query || "") + kept)
+    return
+  }
   var text = host.readText().replace(/[\r\n\u2028\u2029]+/g, " ")
   if (!text) return
   if (W.actionPanelOpen) { actionPanelState.filter += text; actionPanelState.refilter() }
@@ -489,9 +532,15 @@ function handleKey(e) {
     if (ctrl && !shift && kl === "p") { toggleDropdown(); return true }
     if (ctrl && !shift && kl === "t") { toggleToastPanel(); return true }
     if (view().kind === "web-search" && enter && !ctrl && !alt && !String(W.query || "").trim()) { showToast("failure", "Type a query first"); return true }
-    if (view().kind === "quick-capture" && enter && !shift && !alt && !String(W.query || "").trim()) { showToast("failure", "Type a note first"); return true }
     if (view().kind === "todoist-add") return handleAddFormKey(e, enter, ctrl, alt, shift)
-    if (view().kind === "quick-capture" && enter && ctrl && !shift && !alt) { perform("open"); return true }
+    // Capture editor: Enter is a newline (native to the textarea when
+    // focused, appended here when not); only Ctrl+Enter saves. [D]
+    if (view().kind === "quick-capture") {
+      var cap = handleCaptureKey(e, enter, ctrl, alt, shift)
+      if (cap === true) return true
+      if (cap === "editor") return false
+    }
+    if (view().kind === "quick-capture" && enter) return true
     if (enter && ctrl && shift) { performNth(2); return true }
     if (enter && ctrl) { performNth(1); return true }
     if (enter) { performNth(0); return true }

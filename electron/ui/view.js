@@ -217,6 +217,29 @@ function renderList() {
       W.formHandler.focusFirst()
     }
   } else if (W.formKey) { W.formKey = null; W.formHandler = null }
+  // Quick Capture is a multiline editor (Enter = newline, Ctrl+Enter =
+  // save): the textarea holds W.query, with a hint and a character
+  // counter underneath like the screenshot. [D]
+  var isCapture = view().kind === "quick-capture"
+  el.captureform.style.display = isCapture ? "block" : "none"
+  if (isCapture) {
+    if (!W.captureWired) {
+      W.captureWired = true
+      el.captureinput.addEventListener("input", function() {
+        if (el.captureinput.value !== W.query) setQuery(el.captureinput.value)
+      })
+    }
+    // Focused typing already matches W.query: only reset the box when
+    // the value came from elsewhere (push, pop, paste) so the caret
+    // never jumps mid-edit. [D]
+    if (document.activeElement !== el.captureinput && el.captureinput.value !== (W.query || "")) {
+      el.captureinput.value = W.query || ""
+    }
+    el.capturecount.textContent = QuickCapture.charCountLabel(W.query || "")
+    if (W.shown && document.activeElement !== el.captureinput && !W.actionPanelOpen && !W.alert) {
+      try { el.captureinput.focus() } catch (e) {}
+    }
+  }
   el.list.innerHTML = ""
   W.rows.forEach(function(row, index) {
     if (row.rowKind === "section") el.list.appendChild(sectionRowEl(row))
@@ -226,7 +249,7 @@ function renderList() {
 
   var v = view()
   var isEditor = v.kind === "alias" || v.kind === "setting-edit"
-  var emptyVisible = (isEditor || W.rows.length === 0) && v.kind !== "todoist-add"
+  var emptyVisible = (isEditor || W.rows.length === 0) && v.kind !== "todoist-add" && v.kind !== "quick-capture"
   el.empty.classList.toggle("visible", emptyVisible && !compact())
   if (emptyVisible) {
     var isAlias = v.kind === "alias"
@@ -244,13 +267,13 @@ function renderList() {
     el.emptyHint.textContent = isAlias
       ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
       : (isSettingEdit ? "Empty uses the default Notes folder."
-        : (v.kind === "quick-capture" && !W.query ? "Type a note, then press \u21b5 or Ctrl+\u21b5 to save it."
+        : (v.kind === "quick-capture" && !W.query ? "Type a note, then press Ctrl+\u21b5 to save it."
           : (v.kind === "todoist" && !W.query ? "Type to filter tasks."
             : (v.kind === "web-search" && !W.query ? "Type a query, then press \u21b5 to search."
             : (v.kind === "calculator-history" && !W.query ? "Type a calculation in the root search, then copy or paste the answer." : "")))))
     el.emptyHint.style.display = el.emptyHint.textContent ? "block" : "none"
   }
-  el.list.style.display = (isEditor || v.kind === "todoist-add") ? "none" : "block"
+  el.list.style.display = (isEditor || v.kind === "todoist-add" || v.kind === "quick-capture") ? "none" : "block"
   paintSelection()
 }
 

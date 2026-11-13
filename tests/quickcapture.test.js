@@ -61,12 +61,28 @@ test("file names: inbox is fixed, daily is dated, new is timestamped", () => {
   assert.equal(QC.targetFor("new", NOW).append, false)
 })
 
-test("append entries are one markdown line with a timestamp", () => {
+test("append entries are timestamped markdown, multiline preserved", () => {
   const line = QC.formatEntry("hello world", NOW)
   assert.match(line, /^- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] hello world\n$/)
-  assert.equal(QC.formatEntry("a\nb", NOW).indexOf("\n"), QC.formatEntry("a\nb", NOW).length - 1, "embedded newlines collapse to one line")
+  // The editor is multiline (Enter = newline): continuation lines are
+  // indented so the bullet list stays intact, CRLF normalized. [D]
+  const multi = QC.formatEntry("first\nsecond\n\nthird  ", NOW)
+  const rows = multi.split("\n")
+  assert.match(rows[0], /^- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\] first$/)
+  assert.equal(rows[1], "  second")
+  assert.equal(rows[2], "  ")
+  assert.equal(rows[3], "  third")
+  assert.equal(QC.formatEntry("a\r\nb", NOW), QC.formatEntry("a\nb", NOW))
   const content = QC.newFileContent("hello", NOW)
   assert.match(content, /^# \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n\nhello\n$/)
+  assert.match(QC.newFileContent("a\n\nb", NOW), /\n\na\n\nb\n$/)
+})
+
+test("the footer counter labels the character count", () => {
+  assert.equal(QC.charCountLabel(""), "0 Characters")
+  assert.equal(QC.charCountLabel("a"), "1 Character")
+  assert.equal(QC.charCountLabel("hello"), "5 Characters")
+  assert.equal(QC.charCountLabel("a\nb"), "3 Characters", "newlines count")
 })
 
 test("preview truncates long notes", () => {
@@ -84,8 +100,8 @@ test("the builtin pushes the capture view and the row shapes", () => {
   assert.equal(cand.id, RS.QUICK_SAVE_ID)
   assert.equal(cand.kind, "quick-capture")
   assert.deepEqual(RS.actionsFor(cand).map(function(a) { return a.id }), ["open", "save-new", "reveal-folder", "copy-note"])
-  assert.deepEqual(RS.actionsFor(cand).map(function(a) { return a.shortcut }), ["↵", "", "", "Ctrl Shift C"],
-    "Ctrl+↵ submits (Save Capture); Save as New File lives in the action panel" )
+  assert.deepEqual(RS.actionsFor(cand).map(function(a) { return a.shortcut }), ["Ctrl ↵", "", "", "Ctrl Shift C"],
+    "the editor owns Enter (newline), so only Ctrl+↵ saves; Save as New File lives in the action panel" )
   assert.deepEqual(RS.quickCaptureSections("", "p", "s", "q", "f", "d", "m"), [], "empty query shows the empty state, not a row")
   assert.equal(RS.quickCaptureSections("hi", "hi", "inbox.md · Same file", "hi", "inbox.md", "/d", "inbox")[0].rows[0].candidate.id, RS.QUICK_SAVE_ID)
   const about = Object.fromEntries(RS.aboutFor(cand, NOW).map(function(r) { return [r.label, r.value] }))

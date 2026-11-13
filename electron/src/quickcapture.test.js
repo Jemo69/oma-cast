@@ -94,6 +94,26 @@ test("saving appends to the same daily file, then to a new file", () => {
   backend.dispose()
 })
 
+test("a multiline note saves with its newlines intact", () => {
+  const { backend, paths } = setup()
+  const dir = path.join(paths.data, "notes")
+  const r = backend.callSync("rootSearch.performAction", { id: RootSearch.QUICK_SAVE_ID, action: "open", query: "first\nsecond\nthird", confirmed: true })
+  assert.equal(r.ok, true)
+  const files = fs.readdirSync(dir)
+  assert.equal(files.length, 1)
+  const text = fs.readFileSync(path.join(dir, files[0]), "utf8")
+  const lines = text.trim().split("\n")
+  assert.match(lines[2], /^- \[.*\] first$/)
+  assert.equal(lines[3], "  second")
+  assert.equal(lines[4], "  third")
+  // The frecency visit lands on the single-line preview, never the raw
+  // multiline note (history stays single-line for Up-recall). [D]
+  const freq = backend.callSync("frecency.get", { id: "builtin:quick-capture" })
+  const terms = (freq.data && freq.data.searchTerms) || []
+  assert.ok(terms.every(function(t) { return t.term.indexOf("\n") < 0 }))
+  backend.dispose()
+})
+
 test("inbox mode appends to one inbox.md", () => {
   const { backend, paths } = setup()
   assert.equal(backend.callSync("settings.updateGeneralSettings", { quickCaptureMode: "inbox" }).ok, true)

@@ -243,7 +243,10 @@ Item {
         'mkdir -p "$1" && f="$1/$2" && base="${f%.md}" && i=1 && while [ -e "$f" ]; do f="$base-$i.md"; i=$((i+1)); done && printf \'%s\' "$3" > "$f"',
         "oma-cast-capture", t.dir, t.file, content])
     }
-    backend.recordVisit("builtin:quick-capture", q)
+    // The visit earns frecency on the single-line preview: the full note
+    // is multiline and must not land in root search history (Up-recall).
+    // [D]
+    backend.recordVisit("builtin:quick-capture", QuickCapture.previewTitle(q))
     backend.log("info", "quick-capture", "saved", { file: t.file, mode: t.mode })
     return { close: true, hud: "Captured to " + t.file }
   }

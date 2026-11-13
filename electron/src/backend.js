@@ -448,7 +448,9 @@ function createBackend(opts) {
         fs.writeFileSync(full, QuickCapture.newFileContent(q, nowMs()), "utf8")
       }
     } catch (e) { throw new Error("Cannot write " + full + ": " + (e && e.message || e)) }
-    if (candidatesById["builtin:quick-capture"]) recordVisit("builtin:quick-capture", q)
+    // Single-line preview earns the frecency visit: the full note is
+    // multiline and must not land in root search history (Up-recall). [D]
+    if (candidatesById["builtin:quick-capture"]) recordVisit("builtin:quick-capture", QuickCapture.previewTitle(q))
     var shown = full.length > 60 ? "…" + full.slice(-59) : full
     log("info", "quick-capture", "saved", { file: full, mode: t.mode })
     return { close: true, hud: "Captured to " + t.file, toast: null, path: full, shown: shown }

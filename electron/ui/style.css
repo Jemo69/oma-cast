@@ -543,6 +543,25 @@ html, body {
 
 /* Todoist add form (the editor card): ExtensionForm rows + submit. */
 #todoform { overflow-y: auto; padding: 6px 12px 10px; }
+
+/* Quick Capture editor (like the screenshot): a multiline note box —
+   Enter is a newline, Ctrl+Enter saves — with a hint and a character
+   counter underneath. */
+#captureform { overflow-y: auto; padding: 10px 12px; }
+#captureinput {
+  width: 100%; box-sizing: border-box;
+  min-height: 180px;
+  background: transparent; color: inherit;
+  border: none; outline: none; resize: none;
+  font: inherit;
+}
+#captureinput::placeholder { opacity: 0.45; }
+#capturemeta {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 6px;
+  font-size: 11px;
+  opacity: 0.55;
+}
 .form-submit {
   display: block; margin: 10px 0 2px auto; padding: 6px 16px;
   background: var(--accent, #7aa2f7); color: #fff; border: none;

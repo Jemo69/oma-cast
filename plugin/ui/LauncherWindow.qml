@@ -7,6 +7,7 @@ import qs.Ui
 import "../core/Agent.js" as Agent
 import "../core/RootSearch.js" as RootSearch
 import "../core/Todoist.js" as Todoist
+import "../core/QuickCapture.js" as QuickCapture
 
 // Omarchy 4.0.x dropped qs.Ui.OverlayWindow; this is the same full-screen
 // overlay layer the shell's own emoji picker uses.
@@ -83,7 +84,7 @@ PanelWindow {
     : window.view.kind === "menu" ? "Search " + window.view.title + "…"
     : window.view.kind === "calculator-history" ? "Search calculations…"
     : window.view.kind === "web-search" ? window.view.title + "…"
-    : window.view.kind === "quick-capture" ? "Type a note, then press ↵ to capture…"
+    : window.view.kind === "quick-capture" ? "Type a note…"
     : window.view.kind === "todoist" ? "Search tasks…"
     : window.view.kind === "setting-edit" ? "Type a folder path, then press ↵"
     : "Search for apps and commands…"
@@ -146,6 +147,7 @@ PanelWindow {
     window.query = (next.kind === "alias" || next.kind === "setting-edit") ? (next.value || "") : ""
     window.rebuild(true)
     if (next.kind === "todoist-add") window.initAddForm()
+    if (next.kind === "quick-capture") window.initCaptureForm()
   }
 
   // The add view is a structured ExtensionForm (the editor card, like the
@@ -180,6 +182,46 @@ PanelWindow {
     return false
   }
 
+  // Quick Capture is a multiline editor (Enter = newline, like the
+  // screenshot): the TextEdit holds window.query and only Ctrl+Enter
+  // saves. keyCatcher sees keys first (BeforeItem): focused editing keys
+  // pass through as "editor" so the TextEdit handles them natively, and
+  // the editor carries its own Ctrl+Enter/Escape handler in case the
+  // focused item gets keys first. Unfocused keys append here. [D]
+  function initCaptureForm() {
+    Qt.callLater(function() { captureInput.forceActiveFocus() })
+  }
+  function submitCapture() {
+    if (!window.query.trim()) { window.showToast("failure", "Type a note first"); return }
+    window.perform("open")
+  }
+  function handleCaptureKey(event, enter, ctrl, shift, alt) {
+    var key = event.key
+    if (enter && ctrl && !shift && !alt) { window.submitCapture(); return true }
+    // Focused: the TextEdit edits natively (cursor, arrows, undo) and
+    // syncs back through onTextChanged — "editor" tells handleKey to
+    // accept nothing so neither this fallback nor the list navigation
+    // below steals the key. Shortcuts (Ctrl+K, Ctrl+T, …) fall through to
+    // the generic branches instead. [D]
+    if (captureInput.activeFocus) {
+      // Empty-box Backspace pops like the query bar; everything else
+      // edits natively and syncs back through onTextChanged. [D]
+      if (key === Qt.Key_Backspace && !window.query && !window.atRoot) return false
+      if (enter && !ctrl) return "editor"
+      if ((key === Qt.Key_Up || key === Qt.Key_Down || key === Qt.Key_PageUp || key === Qt.Key_PageDown) && !ctrl && !alt) return "editor"
+      if (key === Qt.Key_Left || key === Qt.Key_Right || key === Qt.Key_Home || key === Qt.Key_End) return "editor"
+      if (key === Qt.Key_Backspace || key === Qt.Key_Delete) return "editor"
+      if (window.isTyping(event)) return "editor"
+      return false
+    }
+    // Unfocused (background clicked): append-style input like the query
+    // bar, then hand focus back to the editor.
+    if (enter && !ctrl && !alt) { window.setQuery(window.query + "\n"); captureInput.forceActiveFocus(); return true }
+    if (window.isTyping(event)) { window.setQuery(window.query + event.text); captureInput.forceActiveFocus(); return true }
+    if (key === Qt.Key_Backspace && !ctrl && !alt) { window.setQuery(window.query.slice(0, -1)); captureInput.forceActiveFocus(); return true }
+    return false
+  }
+
   function pop() {
     if (window.atRoot) return
     var next = window.stack.slice(0, -1)
@@ -188,6 +230,9 @@ PanelWindow {
     window.query = top.query || ""
     window.rebuild(false)
     if (top.selectedIndex >= 0) window.select(top.selectedIndex)
+    // A form editor may have held focus: hand it back to the query bar.
+    // [D]
+    keyCatcher.forceActiveFocus()
   }
 
 
@@ -488,7 +533,12 @@ PanelWindow {
   function pasteClipboard() {
     clipboardInput.clear()
     clipboardInput.paste()
-    var text = clipboardInput.text.replace(/[\r\n\u2028\u2029]+/g, " ")
+    // The capture editor is multiline: keep newlines (normalized), the
+    // single-line query bar collapses them. [D]
+    var raw = clipboardInput.text
+    var text = window.view.kind === "quick-capture"
+      ? raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[\u2028\u2029]+/g, "\n")
+      : raw.replace(/[\r\n\u2028\u2029]+/g, " ")
     clipboardInput.clear()
     if (!text) return
     if (window.actionPanelOpen) actionPanel.filter += text
@@ -618,6 +668,14 @@ PanelWindow {
 
     if (window.view.kind === "todoist-add") { return window.handleAddFormKey(event, enter, ctrl, shift, alt) }
 
+    // Capture editor: Enter is a newline (appended here when unfocused,
+    // native to the TextEdit when focused); only Ctrl+Enter saves. [D]
+    if (window.view.kind === "quick-capture") {
+      var cap = window.handleCaptureKey(event, enter, ctrl, shift, alt)
+      if (cap === true) return true
+      if (cap === "editor") return false
+    }
+
     if (window.view.kind === "alias" || window.view.kind === "setting-edit") {
       if (enter) { if (window.view.kind === "alias") window.saveAlias(); else window.saveSettingEdit(); return true }
       if (key === Qt.Key_Space && window.view.kind === "alias") return true
@@ -628,8 +686,7 @@ PanelWindow {
       if (ctrl && !shift && key === Qt.Key_P) { window.toggleDropdown(); return true }
       if (ctrl && !shift && key === Qt.Key_T) { window.toggleToastPanel(); return true }
       if (window.view.kind === "web-search" && enter && !ctrl && !alt && !window.query.trim()) { window.showToast("failure", "Type a query first"); return true }
-      if (window.view.kind === "quick-capture" && enter && !shift && !alt && !window.query.trim()) { window.showToast("failure", "Type a note first"); return true }
-      if (window.view.kind === "quick-capture" && enter && ctrl && !shift && !alt) { window.perform("open"); return true }
+      if (window.view.kind === "quick-capture" && enter) return true
       if (enter && ctrl && shift) { window.performNth(2); return true }
       if (enter && ctrl) { window.performNth(1); return true }
       if (enter) { window.performNth(0); return true }
@@ -763,9 +820,9 @@ PanelWindow {
         x: lead.x + lead.width + window.px(12)
         width: Math.min(implicitWidth, header.queryRoom - (pills.visible ? pills.width + window.px(10) : 0))
         anchors.verticalCenter: parent.verticalCenter
-        text: window.view.kind === "todoist-add" ? "Add Task" : (window.query || (pills.visible ? "" : window.placeholder))
+        text: window.view.kind === "todoist-add" ? "Add Task" : window.view.kind === "quick-capture" ? "Quick Capture" : (window.query || (pills.visible ? "" : window.placeholder))
         color: window.look.foreground
-        opacity: (window.query || window.view.kind === "todoist-add") ? 1 : 0.45
+        opacity: (window.query || window.view.kind === "todoist-add" || window.view.kind === "quick-capture") ? 1 : 0.45
         font.family: window.look.fontFamily
         font.pixelSize: Math.round(Style.font.heading * 1.15 * window.zoom)
         elide: Text.ElideLeft
@@ -777,7 +834,7 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         x: queryText.x + (window.query ? Math.min(queryText.contentWidth, queryText.width) + Style.space(1) : 0)
         color: window.look.accent
-        visible: window.shown && !window.actionPanelOpen && window.argFocus < 0 && window.view.kind !== "todoist-add"
+        visible: window.shown && !window.actionPanelOpen && window.argFocus < 0 && window.view.kind !== "todoist-add" && window.view.kind !== "quick-capture"
 
         SequentialAnimation on opacity {
           running: window.shown
@@ -931,7 +988,7 @@ PanelWindow {
         anchors.fill: parent
         anchors.topMargin: window.px(4)
         anchors.bottomMargin: window.px(4)
-        visible: window.view.kind !== "alias" && window.view.kind !== "setting-edit" && window.view.kind !== "todoist-add"
+        visible: window.view.kind !== "alias" && window.view.kind !== "setting-edit" && window.view.kind !== "todoist-add" && window.view.kind !== "quick-capture"
         clip: true
         model: rows
         boundsBehavior: Flickable.StopAtBounds
@@ -949,7 +1006,7 @@ PanelWindow {
       Column {
         anchors.centerIn: parent
         spacing: window.px(8)
-        visible: (window.view.kind === "alias" || window.view.kind === "setting-edit" || rows.count === 0) && window.view.kind !== "todoist-add"
+        visible: (window.view.kind === "alias" || window.view.kind === "setting-edit" || rows.count === 0) && window.view.kind !== "todoist-add" && window.view.kind !== "quick-capture"
 
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
@@ -978,7 +1035,7 @@ PanelWindow {
           textFormat: Text.PlainText
           text: window.view.kind === "alias" ? "Typing the alias exactly in the root search puts this command on top. Leave it empty to remove it."
             : window.view.kind === "setting-edit" ? "Empty uses the default Notes folder."
-            : window.view.kind === "quick-capture" && !window.query ? "Type a note, then press ↵ or Ctrl+↵ to save it."
+            : window.view.kind === "quick-capture" && !window.query ? "Type a note, then press Ctrl+↵ to save it."
             : window.view.kind === "todoist" && !window.query ? "Type to filter tasks."
             : window.view.kind === "web-search" && !window.query ? "Type a query, then press ↵ to search."
             : window.view.kind === "calculator-history" && !window.query ? "Type a calculation in the root search, then copy or paste the answer." : ""
@@ -1035,6 +1092,86 @@ PanelWindow {
               cursorShape: Qt.PointingHandCursor
               onClicked: addForm.submit()
             }
+          }
+        }
+      }
+
+      // Quick Capture editor (like the screenshot): a multiline note box —
+      // Enter is a newline, Ctrl+Enter saves — with a hint and a character
+      // counter underneath. The text is window.query, so the
+      // hidden live row, perform("open") and the action panel keep
+      // working unchanged. [D]
+      Column {
+        anchors.fill: parent
+        anchors.topMargin: window.px(4)
+        anchors.bottomMargin: window.px(4)
+        spacing: window.px(6)
+        visible: window.view.kind === "quick-capture"
+
+        Item {
+          width: parent.width
+          height: parent.height - captureMeta.height - parent.spacing
+
+          Text {
+            anchors.fill: parent
+            visible: !window.query
+            textFormat: Text.PlainText
+            text: "Type a note…"
+            color: window.look.foreground
+            opacity: 0.45
+            font.family: window.look.fontFamily
+            font.pixelSize: Math.round(Style.font.heading * 1.15 * window.zoom)
+            wrapMode: Text.Wrap
+          }
+
+          TextEdit {
+            id: captureInput
+            anchors.fill: parent
+            text: window.query
+            onTextChanged: if (text !== window.query) window.setQuery(text)
+            wrapMode: TextEdit.Wrap
+            color: window.look.foreground
+            selectionColor: window.look.accent
+            selectedTextColor: "white"
+            selectByMouse: true
+            font.family: window.look.fontFamily
+            font.pixelSize: Math.round(Style.font.heading * 1.15 * window.zoom)
+            Keys.onPressed: function(event) {
+              var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+              if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && ctrl) { window.submitCapture(); event.accepted = true }
+              else if (event.key === Qt.Key_Escape) { window.handleEscape(false); event.accepted = true }
+            }
+          }
+        }
+
+        Row {
+          id: captureMeta
+          width: parent.width
+          height: window.px(20)
+          spacing: window.px(8)
+
+          Text {
+            id: hintText
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: "Enter newline · Ctrl+↵ save"
+            color: window.look.foreground
+            opacity: 0.45
+            font.family: window.look.fontFamily
+            font.pixelSize: Math.round(Style.font.bodySmall * window.zoom)
+          }
+
+          Item { width: parent.width - hintText.width - countText.width - parent.spacing * 2; height: 1 }
+
+          Text {
+            id: countText
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: QuickCapture.charCountLabel(window.query)
+            color: window.look.foreground
+            opacity: 0.55
+            font.family: window.look.fontFamily
+            font.pixelSize: Math.round(Style.font.bodySmall * window.zoom)
           }
         }
       }
@@ -1122,7 +1259,7 @@ PanelWindow {
         KeyHint {
           visible: footerActions.primary !== null
           anchors.verticalCenter: parent.verticalCenter
-          keys: "↵"
+          keys: footerActions.primary && footerActions.primary.shortcut ? footerActions.primary.shortcut : "↵"
           color: window.look.foreground
           zoom: window.zoom
         }

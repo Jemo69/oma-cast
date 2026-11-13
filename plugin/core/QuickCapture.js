@@ -116,17 +116,31 @@ function joinDir(dir, file, sep) {
   return String(dir).replace(/[\\/]+$/, "") + s + file
 }
 
-// One markdown line for the append modes. Single-line by construction (the
-// launcher's query bar strips newlines on paste); embedded newlines become
-// spaces so one capture is always one line.
+// One markdown entry for the append modes. The capture editor is
+// multiline (Enter = newline, Ctrl+Enter = save), so embedded newlines are
+// preserved: the first line carries the timestamp and continuation lines
+// are indented two spaces so the bullet list stays intact. Newlines are
+// normalized to \n (the QML/Electron editors may hand over \r\n). [D]
 function formatEntry(text, nowMs) {
-  var s = String(text).replace(/\s*\r?\n\s*/g, " ").trim()
-  return "- [" + fmtStamp(nowMs) + "] " + s + "\n"
+  var s = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+  var lines = s.split("\n").map(function (l) { return l.replace(/[ \t]+$/g, "") })
+  while (lines.length && !lines[lines.length - 1]) lines.pop()
+  while (lines.length && !lines[0]) lines.shift()
+  var first = lines.length ? lines[0] : ""
+  var rest = lines.slice(1).map(function (l) { return "  " + l })
+  return "- [" + fmtStamp(nowMs) + "] " + first + (rest.length ? "\n" + rest.join("\n") : "") + "\n"
 }
 
-// Whole file for "new" mode.
+// Whole file for "new" mode (multiline preserved verbatim).
 function newFileContent(text, nowMs) {
-  return "# " + fmtStamp(nowMs) + "\n\n" + String(text).trim() + "\n"
+  return "# " + fmtStamp(nowMs) + "\n\n" + String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim() + "\n"
+}
+
+// Footer counter for the capture editor ("641 Characters"), shared by
+// the QML footer and the Electron footer so the two never drift. [D]
+function charCountLabel(text) {
+  var n = String(text === undefined || text === null ? "" : text).length
+  return n + (n === 1 ? " Character" : " Characters")
 }
 
 // Heading for a freshly created append file, so inbox.md never starts with
@@ -161,6 +175,7 @@ if (typeof module !== "undefined") {
     formatEntry: formatEntry,
     newFileContent: newFileContent,
     appendFileHeading: appendFileHeading,
-    previewTitle: previewTitle
+    previewTitle: previewTitle,
+    charCountLabel: charCountLabel
   }
 }

@@ -650,13 +650,13 @@ function actionsFor(candidate) {
       { id: "copy", title: "Copy Task Title", shortcut: "Ctrl Shift ↵", section: "copy", icon: "" }
     ]
   }
-  // Quick Capture: ↵ or Ctrl+↵ saves (respecting the mode) — the note
-  // field submits on Control+Enter like a multiline note box. "Save as
-  // New File" stays available from the action panel for the per-capture
+  // Quick Capture is a multiline editor (Enter = newline, like the
+  // screenshot): only Ctrl+↵ saves, respecting the mode. "Save as New
+  // File" stays available from the action panel for the per-capture
   // same-vs-new override. [D]
   if (candidate.kind === "quick-capture") {
     return [
-      { id: "open", title: "Save Capture", shortcut: "↵", section: "primary", icon: "" },
+      { id: "open", title: "Save Capture", shortcut: "Ctrl ↵", section: "primary", icon: "" },
       { id: "save-new", title: "Save as New File", shortcut: "", section: "primary", icon: "" },
       { id: "reveal-folder", title: "Reveal Folder", shortcut: "", section: "primary", icon: "" },
       { id: "copy-note", title: "Copy Note Text", shortcut: "Ctrl Shift C", section: "copy", icon: "" }

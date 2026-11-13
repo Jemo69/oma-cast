@@ -20,6 +20,7 @@ var Paths = require("../../plugin/core/Paths.js")
 var Schema = require("../../plugin/core/Schema.js")
 var RootSearch = require("../../plugin/core/RootSearch.js")
 var Todoist = require("../../plugin/core/Todoist.js")
+var QuickCapture = require("../../plugin/core/QuickCapture.js")
 var fs = require("fs")
 var path = require("path")
 
@@ -151,7 +152,8 @@ function look() { return theme.look() }
 
 var el = {}
 ;["window", "card", "header", "lead", "lead-glyph", "query", "caret", "pills", "filterbutton",
-  "filter-title", "filter-caret", "header-hair", "loader", "body", "list", "todoform", "empty", "empty-glyph",
+  "filter-title", "filter-caret", "header-hair", "loader", "body", "list", "todoform", "captureform", "captureinput",
+  "capturemeta", "capturehint", "capturecount", "empty", "empty-glyph",
   "empty-title", "empty-hint", "footer", "footer-left", "toast-icon", "toast-text", "toast-hint",
   "footer-right", "primary-title", "primary-hint", "footer-divider", "actions-title", "actions-hint",
   "actionpanel", "dropdown", "toastpanel", "infopanel", "info-title", "info-rows", "alert", "alert-box",
@@ -274,7 +276,7 @@ function placeholderText() {
   if (v.kind === "processes") return "Search processes…"
   if (v.kind === "windows-settings") return "Search settings pages…"
   if (v.kind === "web-search") return v.title + "…"
-  if (v.kind === "quick-capture") return "Type a note, then press ↵ to capture…"
+  if (v.kind === "quick-capture") return "Type a note…"
   if (v.kind === "todoist") return "Search tasks…"
   if (v.kind === "setting-edit") return "Type a folder path, then press ↵"
   return "Search for apps and commands…"
@@ -309,7 +311,8 @@ function renderHeader() {
   var pillsW = pillsVisible ? el.pills.offsetWidth : 0
   var queryFont = queryFontPx + "px " + L.fontFamily
   var isAddFormHead = view().kind === "todoist-add"
-  var full = isAddFormHead ? "Add Task" : (W.query || (pillsVisible ? "" : placeholderText()))
+  var isCaptureHead = view().kind === "quick-capture"
+  var full = isAddFormHead ? "Add Task" : isCaptureHead ? "Quick Capture" : (W.query || (pillsVisible ? "" : placeholderText()))
   var implicitW = measure(full, queryFont)
   var queryW = Math.min(implicitW, room - (pillsVisible ? pillsW + px(10) : 0))
 
@@ -323,11 +326,11 @@ function renderHeader() {
   el.query.textContent = implicitW > queryW
     ? elideLeft(full, queryW, function(t) { return measure(t, queryFont) })
     : full
-  el.query.style.opacity = (W.query || isAddFormHead) ? 1 : 0.45
+  el.query.style.opacity = (W.query || isAddFormHead || isCaptureHead) ? 1 : 0.45
   el.pills.style.left = (queryX + (W.query ? queryW : 0) + px(10)) + "px"
 
   // Caret: blinks on the 530 ms half-periods of the QML SequentialAnimation.
-  var caretVisible = W.shown && !W.actionPanelOpen && W.argFocus < 0 && !isAddFormHead
+  var caretVisible = W.shown && !W.actionPanelOpen && W.argFocus < 0 && !isAddFormHead && !isCaptureHead
   el.caret.style.display = caretVisible ? "block" : "none"
   el.caret.style.height = (queryFontPx + theme.space(4)) + "px"
   var contentW = W.query ? Math.min(measure(W.query, queryFont), queryW) : 0
