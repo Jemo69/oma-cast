@@ -52,6 +52,8 @@ function normalizeItem(raw) {
     storeValue: item.storeValue === true,
     autoFocus: item.autoFocus === true,
     required: item.required === true,
+    // Advanced rows hide behind a toggle until the user asks for them. [D]
+    advanced: item.advanced === true,
     onChange: item.onChange === undefined ? null : item.onChange,
     onBlur: item.onBlur === undefined ? null : item.onBlur,
     onFocus: item.onFocus === undefined ? null : item.onFocus

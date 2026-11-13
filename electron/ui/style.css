@@ -517,21 +517,29 @@ html, body {
   white-space: pre;
 }
 
-/* Extension Form (ref 03 §2.4): every field kind. */
+/* Extension Form (ref 03 §2.4): every field kind. Labels carry the
+   theme foreground explicitly: inherited body text is too dim on the
+   dark card. [D] */
+#todoform { color: var(--fg); }
 .form-field { display: flex; flex-direction: column; gap: 4px; margin: 5px 0; }
-.form-label { font-weight: 600; }
+.form-label { font-weight: 600; color: var(--fg); opacity: 0.9; }
 .form-field input[type="text"], .form-field input[type="password"],
 .form-field input[type="date"], .form-field input[type="datetime-local"],
 .form-field textarea, .form-field select {
   background: var(--color-input-bg, rgba(255,255,255,0.06));
-  color: inherit; border: 1px solid rgba(128,128,128,0.35);
+  color: var(--fg); border: 1px solid rgba(128,128,128,0.35);
   border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%; box-sizing: border-box;
 }
+.form-field select option { color: #111; }
 .form-field textarea { min-height: 64px; resize: vertical; }
-.form-check { display: flex; gap: 8px; align-items: center; }
+.form-check { display: flex; gap: 8px; align-items: center; color: var(--fg); }
 .form-sep { border: none; border-top: 1px solid rgba(128,128,128,0.35); width: 100%; }
-.form-desc { opacity: 0.85; }
-.form-info { opacity: 0.6; font-size: 0.9em; }
+.form-desc { color: var(--fg); opacity: 0.85; }
+.form-info { color: var(--fg); opacity: 0.6; font-size: 0.9em; }
+.form-advanced {
+  background: none; border: none; padding: 4px 0; font: inherit;
+  color: var(--fg); opacity: 0.6; cursor: pointer; text-align: left;
+}
 
 /* Todoist add form (the editor card): ExtensionForm rows + submit. */
 #todoform { overflow-y: auto; padding: 6px 12px 10px; }

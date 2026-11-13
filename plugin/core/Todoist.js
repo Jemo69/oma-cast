@@ -156,7 +156,7 @@ function addFormDefinition() {
       { kind: "Dropdown", id: "priority", title: "Priority",
         menu: { sections: [{ id: "p", items: ADD_PRIORITIES }] }, defaultValue: "1" },
       { kind: "DatePicker", id: "dueDate", title: "Due Date", type: "date" },
-      { kind: "DatePicker", id: "scheduledDate", title: "Scheduled Date", type: "date" },
+      { kind: "DatePicker", id: "scheduledDate", title: "Scheduled Date", type: "date", advanced: true },
       { kind: "TextField", id: "recurrence", title: "Recurrence", placeholder: "e.g., every day, every week on Monday" },
       { kind: "TagPicker", id: "tags", title: "Tags", placeholder: "Comma-separated labels" }
     ]

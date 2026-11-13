@@ -1000,6 +1000,12 @@ PanelWindow {
         ExtensionForm {
           id: addForm
           width: parent.width
+          foreground: window.look.foreground
+          dim: Util.alpha(window.look.foreground, 0.6)
+          accent: window.look.accent
+          fieldBackground: Util.alpha(window.look.foreground, 0.06)
+          fieldBorder: Util.alpha(window.look.foreground, 0.18)
+          popupBackground: window.look.background
           onSubmitted: function(values) { window.submitAddForm(values) }
         }
 

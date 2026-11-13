@@ -17,6 +17,16 @@ Column {
   // focus-aware paste. [D]
   property var inputs: []
   property var inputFields: []
+  // Advanced rows (item.advanced) hide until the user expands this. [D]
+  property bool showAdvanced: false
+  // Theme palette, set by the host (defaults suit a dark card). [D]
+  property color foreground: "white"
+  property color dim: "#a8a8a8"
+  property color accent: "#7aa2f7"
+  property color error: "#e06c75"
+  property color fieldBackground: Qt.rgba(1, 1, 1, 0.06)
+  property color fieldBorder: Qt.rgba(1, 1, 1, 0.18)
+  property color popupBackground: "#23232e"
   // Set by the host before setForm when the first field should take
   // focus; consumed by onLoaded so no retry race remains. [D]
   property bool focusRequested: false
@@ -70,15 +80,27 @@ Column {
     if (root.inputs.length) root.inputs[0].forceActiveFocus()
   }
 
+  function hasAdvanced() {
+    for (var i = 0; i < root.form.items.length; i++) if (root.form.items[i].advanced) return true
+    return false
+  }
+
   function focusNext(direction) {
-    if (!root.inputs.length) return
-    var at = -1
-    for (var i = 0; i < root.inputs.length; i++) {
-      if (root.inputs[i].activeFocus) { at = i; break }
+    // Hidden advanced rows stay instantiated: skip them in the tab order. [D]
+    var order = []
+    for (var i = 0; i < root.inputFields.length; i++) {
+      var e = root.inputFields[i]
+      if (e.field.advanced && !root.showAdvanced) continue
+      order.push(e.target)
     }
-    var next = at < 0 ? (direction > 0 ? 0 : root.inputs.length - 1)
-      : Math.max(0, Math.min(root.inputs.length - 1, at + direction))
-    root.inputs[next].forceActiveFocus()
+    if (!order.length) return
+    var at = -1
+    for (var j = 0; j < order.length; j++) {
+      if (order[j].activeFocus) { at = j; break }
+    }
+    var next = at < 0 ? (direction > 0 ? 0 : order.length - 1)
+      : Math.max(0, Math.min(order.length - 1, at + direction))
+    order[next].forceActiveFocus()
   }
 
   function fieldError(id) {
@@ -136,6 +158,9 @@ Column {
     model: root.form.items || []
     delegate: Loader {
       width: root.width
+      // Advanced rows hide (but stay instantiated, keeping values) until
+      // the user expands the toggle below. [D]
+      visible: !(modelData && modelData.advanced && !root.showAdvanced)
       property var field: modelData
       // Ternary chain: binding scripts cannot use return statements. [D]
       sourceComponent: (modelData && (modelData.kind === "TextField" || modelData.kind === "PasswordField")) ? textFieldComp
@@ -164,6 +189,25 @@ Column {
     }
   }
 
+  // Visible affordance for the hidden advanced rows, below the fields. [D]
+  Item {
+    width: root.width
+    height: toggleText.implicitHeight
+    visible: root.hasAdvanced()
+    Text {
+      id: toggleText
+      textFormat: Text.PlainText
+      text: root.showAdvanced ? "Hide advanced" : "Show advanced"
+      color: root.dim
+      font.pixelSize: 13
+    }
+    MouseArea {
+      anchors.fill: parent
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.showAdvanced = !root.showAdvanced
+    }
+  }
+
   Component {
     id: textFieldComp
     Column {
@@ -171,18 +215,23 @@ Column {
       property var field
       property var focusTarget: input
       spacing: 2
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; color: root.foreground }
       TextField {
         id: input
         objectName: "addFormField"
         width: parent.width
         placeholderText: (field && field.placeholder) || ""
         echoMode: (field && field.isSecure) ? TextInput.Password : TextInput.Normal
+        selectByMouse: true
+        color: root.foreground
+        placeholderTextColor: root.dim
+        background: Rectangle { color: root.fieldBackground; border.color: root.fieldBorder; border.width: 1; radius: 6 }
         text: (field && root.values[field.id] !== undefined) ? String(root.values[field.id]) : ""
         onTextChanged: if (field && text !== String(root.values[field.id] || "")) { root.setField(field.id, text); root.fieldChanged(field.id, text) }
         onAccepted: root.submit()
       }
-      Text { visible: !!root.fieldError(field ? field.id : ""); text: root.fieldError(field ? field.id : ""); textFormat: Text.PlainText }
+      Text { visible: !!(field && field.info); text: (field && field.info) || ""; textFormat: Text.PlainText; color: root.dim; wrapMode: Text.Wrap }
+      Text { visible: !!root.fieldError(field ? field.id : ""); text: root.fieldError(field ? field.id : ""); textFormat: Text.PlainText; color: root.error }
     }
   }
   Component {
@@ -192,15 +241,20 @@ Column {
       property var field
       property var focusTarget: input
       spacing: 2
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; color: root.foreground }
       TextArea {
         id: input
         objectName: "addFormField"
         width: parent.width
         placeholderText: (field && field.placeholder) || ""
+        selectByMouse: true
+        color: root.foreground
+        placeholderTextColor: root.dim
+        background: Rectangle { color: root.fieldBackground; border.color: root.fieldBorder; border.width: 1; radius: 6 }
         text: (field && root.values[field.id] !== undefined) ? String(root.values[field.id]) : ""
         onTextChanged: if (field && text !== String(root.values[field.id] || "")) { root.setField(field.id, text); root.fieldChanged(field.id, text) }
       }
+      Text { visible: !!(field && field.info); text: (field && field.info) || ""; textFormat: Text.PlainText; color: root.dim; wrapMode: Text.Wrap }
     }
   }
   Component {
@@ -214,6 +268,13 @@ Column {
       text: (field && (field.checkboxTitle || field.title)) || ""
       checked: !!(field && root.values[field.id])
       onToggled: if (field) { root.setField(field.id, checked); root.fieldChanged(field.id, checked) }
+      contentItem: Text {
+        text: box.text
+        color: root.foreground
+        verticalAlignment: Text.AlignVCenter
+        leftPadding: box.indicator.width + box.spacing
+        elide: Text.ElideRight
+      }
     }
   }
   Component {
@@ -223,7 +284,7 @@ Column {
       property var field
       property var focusTarget: input
       spacing: 2
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; color: root.foreground }
       TextField {
         id: input
         objectName: "addFormField"
@@ -231,11 +292,16 @@ Column {
         // Plain text, not a mask: stored and displayed text stay
         // identical, and the core flags bad shapes on submit. [D]
         placeholderText: "YYYY-MM-DD"
+        selectByMouse: true
+        color: root.foreground
+        placeholderTextColor: root.dim
+        background: Rectangle { color: root.fieldBackground; border.color: root.fieldBorder; border.width: 1; radius: 6 }
         text: (field && root.values[field.id] != null) ? String(root.values[field.id]) : ""
         onTextChanged: if (field && text !== String(root.values[field.id] || "")) { root.setField(field.id, text); root.fieldChanged(field.id, text) }
         onAccepted: root.submit()
       }
-      Text { visible: !!root.fieldError(field ? field.id : ""); text: root.fieldError(field ? field.id : ""); textFormat: Text.PlainText }
+      Text { visible: !!(field && field.info); text: (field && field.info) || ""; textFormat: Text.PlainText; color: root.dim; wrapMode: Text.Wrap }
+      Text { visible: !!root.fieldError(field ? field.id : ""); text: root.fieldError(field ? field.id : ""); textFormat: Text.PlainText; color: root.error }
     }
   }
   Component {
@@ -245,7 +311,7 @@ Column {
       property var field
       property var focusTarget: combo
       spacing: 2
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; color: root.foreground }
       ComboBox {
         id: combo
         objectName: "addFormField"
@@ -273,12 +339,61 @@ Column {
         }
         model: titles()
         currentIndex: syncedIndex()
+        contentItem: Text {
+          leftPadding: 8
+          rightPadding: combo.indicator.width + 8
+          text: combo.displayText
+          color: root.foreground
+          verticalAlignment: Text.AlignVCenter
+          elide: Text.ElideRight
+        }
+        background: Rectangle {
+          color: root.fieldBackground
+          border.color: root.fieldBorder
+          border.width: 1
+          radius: 6
+        }
+        indicator: Text {
+          x: combo.width - width - 10
+          y: (combo.availableHeight - height) / 2
+          text: "\u25be"
+          color: root.dim
+          font.pixelSize: 12
+        }
+        delegate: ItemDelegate {
+          width: combo.width
+          highlighted: combo.highlightedIndex === index
+          contentItem: Text {
+            text: modelData
+            color: highlighted ? "white" : root.foreground
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+          }
+          background: Rectangle { color: highlighted ? root.accent : "transparent"; radius: 4 }
+        }
+        popup: Popup {
+          y: combo.height + 4
+          width: combo.width
+          padding: 4
+          contentItem: ListView {
+            clip: true
+            implicitHeight: contentHeight
+            model: combo.delegateModel
+          }
+          background: Rectangle {
+            color: root.popupBackground
+            border.color: root.fieldBorder
+            border.width: 1
+            radius: 6
+          }
+        }
         onActivated: {
           if (!field) return
           var vals = optionValues()
           if (index >= 0 && index < vals.length) { root.setField(field.id, vals[index]); root.fieldChanged(field.id, vals[index]) }
         }
       }
+      Text { visible: !!(field && field.info); text: (field && field.info) || ""; textFormat: Text.PlainText; color: root.dim; wrapMode: Text.Wrap }
     }
   }
   Component {
@@ -288,11 +403,15 @@ Column {
       property var field
       property var focusTarget: input
       spacing: 2
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; color: root.foreground }
       TextField {
         id: input
         objectName: "addFormField"
         width: parent.width
+        color: root.foreground
+        placeholderTextColor: root.dim
+        background: Rectangle { color: root.fieldBackground; border.color: root.fieldBorder; border.width: 1; radius: 6 }
+        selectByMouse: true
         placeholderText: (field && field.placeholder) || "Comma-separated values"
         text: (field && Array.isArray(root.values[field.id])) ? root.values[field.id].join(", ") : ""
         onTextChanged: {
@@ -305,6 +424,7 @@ Column {
         }
         onAccepted: root.submit()
       }
+      Text { visible: !!(field && field.info); text: (field && field.info) || ""; textFormat: Text.PlainText; color: root.dim; wrapMode: Text.Wrap }
     }
   }
   Component {
@@ -314,11 +434,15 @@ Column {
       property var field
       property var focusTarget: input
       spacing: 2
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; color: root.foreground }
       TextField {
         id: input
         objectName: "addFormField"
         width: parent.width
+        color: root.foreground
+        placeholderTextColor: root.dim
+        background: Rectangle { color: root.fieldBackground; border.color: root.fieldBorder; border.width: 1; radius: 6 }
+        selectByMouse: true
         placeholderText: "/path/to/file"
         text: (field && Array.isArray(root.values[field.id])) ? root.values[field.id].join(", ") : ""
         onTextChanged: {
@@ -329,6 +453,7 @@ Column {
         }
         onAccepted: root.submit()
       }
+      Text { visible: !!(field && field.info); text: (field && field.info) || ""; textFormat: Text.PlainText; color: root.dim; wrapMode: Text.Wrap }
     }
   }
   Component { id: separatorComp; Rectangle { property var field; property var focusTarget: null; height: 1; width: parent.width; opacity: 0.3 } }
@@ -338,8 +463,8 @@ Column {
       width: root.width
       property var field
       property var focusTarget: null
-      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; font.bold: true }
-      Text { text: (field && field.text) || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+      Text { text: (field && field.title) || ""; textFormat: Text.PlainText; font.bold: true; color: root.foreground }
+      Text { text: (field && field.text) || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: root.foreground }
     }
   }
 }

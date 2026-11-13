@@ -165,6 +165,8 @@ test("the add form carries every editor field", () => {
     ["description", "priority", "dueDate", "scheduledDate", "recurrence", "tags"])
   assert.deepEqual(form.items.map(function(i) { return i.kind }),
     ["TextField", "Dropdown", "DatePicker", "DatePicker", "TextField", "TagPicker"])
+  assert.deepEqual(form.items.map(function(i) { return !!i.advanced }),
+    [false, false, false, true, false, false], "only Scheduled Date hides behind Advanced")
   assert.deepEqual(TD.addFormInitial(),
     { description: "", priority: "1", dueDate: null, scheduledDate: null, recurrence: "", tags: [] })
 })
